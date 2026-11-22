@@ -226,6 +226,12 @@ window.addEventListener("unhandledrejection",function(e){var m=String((e.reason&
   window.fetch = function(input, init){
     var url = "";
     try { url = (typeof input === "string") ? input : (input && input.url) || String(input); } catch(e){}
+    /* Los Angeles Shark's original SWF checks its loader URL against Y8's
+       domain allowlist. Give that one game its permitted URL while still
+       serving the bundled, offline payload below. */
+    if (/^https?:\/\/www\.y8\.com\/games\/los-angeles-shark\.swf(?:[?#]|$)/i.test(url)){
+      url = "game://la.swf";
+    }
     if (url.indexOf("game://") === 0){
       var id = url.slice(7).split(/[?#\/]/)[0].replace(/\.swf$/i, "");
       var uri = window.SHARK_DATA[id];
@@ -261,7 +267,10 @@ window.addEventListener("unhandledrejection",function(e){var m=String((e.reason&
       player = ruffle.createPlayer();
       player.style.width = "100%"; player.style.height = "100%";
       holder.appendChild(player);
-      player.load({ url: "game://" + id + ".swf" }).catch(function(e){
+      var gameUrl = id === "la"
+        ? "https://www.y8.com/games/los-angeles-shark.swf"
+        : "game://" + id + ".swf";
+      player.load({ url: gameUrl }).catch(function(e){
         var d = document.getElementById("err");
         if (d){ d.style.display="block"; d.textContent = "Ruffle load failed: " + e; }
       });
