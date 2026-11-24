@@ -1,0 +1,1513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Game Loader</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+  #game { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; height: 100dvh; margin: 0; padding: 0; border: 0; background: #000; }
+  #notice { position: fixed; z-index: 2; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; overflow: auto; background: #080a0f; color: #e8edf5; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: center; white-space: pre-wrap; }
+  #notice[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<iframe id="game" title="Game" sandbox="allow-scripts allow-forms allow-modals allow-popups" allow="fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe>
+<pre id="notice" hidden></pre>
+<script>
+(() => {
+  'use strict';
+
+  // Keep the established IDs 1–15 in this exact order: game-specific preparation
+  // below and existing ?N links depend on these mappings.
+  const KNOWN_GAMES = Object.freeze([
+    { id: '1', path: '1on1soccer.html', name: '1-on-1 Soccer' },
+    { id: '2', path: 'paperio2.html', name: 'Paper.io 2' },
+    { id: '3', path: 'escaperoad3.html', name: 'Escape Road 3' },
+    { id: '4', path: 'mausland-sharks.html', name: 'Mausland Sharks' },
+    { id: '5', path: 'eaglercraft-26.2-0.5.html', name: 'Eaglercraft 26.2-0.5' },
+    { id: '6', path: 'webdashers.html', name: 'Web Dashers' },
+    { id: '7', path: 'tinyfishing.html', name: 'Tiny Fishing' },
+    { id: '8', path: 'drivemad.html', name: 'Drive Mad' },
+    { id: '9', path: 'Sandboxels.html', name: 'Sandboxels', ref: '16b392e12a38a249ad2d2971aca52ef0a2bab3b3' },
+    { id: '10', path: 'Google-Block-Breaker.html', name: 'Google Block Breaker' },
+    { id: '11', path: 'PolyTrack.html', name: 'PolyTrack' },
+    { id: '12', path: 'Get-Yoked.html', name: 'Get Yoked' },
+    { id: '13', path: 'Rolling-Sky.html', name: 'Rolling Sky' },
+    { id: '14', path: 'Super-Mario-Construct.html', name: 'Super Mario Construct' },
+    { id: '15', path: 'retro-bowl-collection.html', name: 'Retro Bowl Collection' }
+  ]);
+  const REPOSITORY_TREE_API = 'https://api.github.com/repos/k1412483/ubutilsplus-games/git/trees/main?recursive=1';
+  const REPOSITORY_RAW_BASE = 'https://raw.githubusercontent.com/k1412483/ubutilsplus-games';
+  const REPOSITORY_DEFAULT_REF = 'main';
+  const REMOTE_LAUNCHER_PATH = 'loader.html';
+
+  function makeKnownGameCatalog() {
+    const catalog = Object.create(null);
+    for (const game of KNOWN_GAMES) {
+      catalog[game.id] = Object.freeze({ name: game.name, path: game.path, type: 'html', url: gameURLFromPath(game.path, game.ref) });
+    }
+    return Object.freeze(catalog);
+  }
+
+  const BUILT_IN_GAMES = makeKnownGameCatalog();
+  let GAMES = BUILT_IN_GAMES;
+  const MAX_BUFFER_BYTES = 32 * 1024 * 1024;
+  let activeZipSession = null;
+  const params = new URLSearchParams(window.location.search);
+  const gameFrame = document.getElementById('game');
+  const notice = document.getElementById('notice');
+  let activeController = null;
+  let activeBlobURL = null;
+  let loadTimer = null;
+
+  function fail(message) {
+    notice.textContent = message;
+    notice.hidden = false;
+  }
+
+  function getGameId() {
+    const namedId = (params.get('game') || params.get('id') || '').trim();
+    if (namedId) return namedId;
+    const firstPart = (window.location.search || '').slice(1).split('&', 1)[0];
+    const compactId = firstPart.split('=', 1)[0].trim();
+    if (/^\d+$/.test(compactId)) return compactId;
+
+    // PenguinMod's srcdoc-based extension passes the selected game in iframe.name.
+    const embeddedMatch = /^penguinmod-game:(\d+)(?::large=1|:size=(?:small|large|auto))?$/.exec(String(window.name || '').trim());
+    return embeddedMatch ? embeddedMatch[1] : null;
+  }
+
+  function getBufferMode() {
+    const queryMode = String(params.get('size') || '').trim().toLowerCase();
+    if (queryMode === 'small' || queryMode === 'large' || queryMode === 'auto') return queryMode;
+    if (params.get('large') === '1') return 'large';
+
+    const frameName = String(window.name || '').trim();
+    if (/^penguinmod-game:\d+:large=1$/.test(frameName)) return 'large';
+    const embeddedMatch = /^penguinmod-game:\d+:size=(small|large|auto)$/.exec(frameName);
+    return embeddedMatch ? embeddedMatch[1] : 'small';
+  }
+
+  function gameNameFromPath(path) {
+    const filename = path.split('/').pop() || path;
+    return filename.replace(/\.(?:html|zip)$/i, '').replace(/[-_]+/g, ' ').trim() || filename;
+  }
+
+  function gamePolicyFor(game) {
+    const path = String(game && game.path || '').split('/').pop().toLowerCase();
+    if (['mausland-sharks.html', 'eaglercraft-26.2-0.5.html', 'webdashers.html',
+      'get-yoked.html', 'rolling-sky.html', 'super-mario-construct.html'].includes(path)) {
+      return Object.freeze({ blobBacked: true, rollingSky: path === 'rolling-sky.html', superMarioConstruct: path === 'super-mario-construct.html' });
+    }
+    return Object.freeze({ blobBacked: false, rollingSky: false, superMarioConstruct: false });
+  }
+
+  function gameURLFromPath(path, ref = REPOSITORY_DEFAULT_REF) {
+    const normalizedRef = String(ref || REPOSITORY_DEFAULT_REF).trim();
+    const refPath = normalizedRef.startsWith('refs/') || /^[0-9a-f]{40}$/i.test(normalizedRef)
+      ? normalizedRef
+      : `refs/heads/${normalizedRef.split('/').map(segment => encodeURIComponent(segment)).join('/')}`;
+    const encodedPath = String(path).split('/').map(segment => encodeURIComponent(segment)).join('/');
+    return `${REPOSITORY_RAW_BASE}/${refPath}/${encodedPath}`;
+  }
+
+  async function discoverGameCatalog() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(REPOSITORY_TREE_API, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'default',
+        redirect: 'follow',
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`GitHub catalog returned HTTP ${response.status}.`);
+      const repositoryTree = await response.json();
+      if (!repositoryTree || repositoryTree.truncated || !Array.isArray(repositoryTree.tree)) {
+        throw new Error('GitHub returned an incomplete game catalog.');
+      }
+
+      const supportedPaths = new Set(repositoryTree.tree
+        .filter(entry => entry && entry.type === 'blob' && typeof entry.path === 'string'
+          && entry.path.toLowerCase() !== REMOTE_LAUNCHER_PATH
+          && /\.(?:html|zip)$/i.test(entry.path))
+        .map(entry => entry.path));
+      const htmlPaths = new Set(Array.from(supportedPaths).filter(path => /\.html$/i.test(path)));
+      const zipPaths = new Set(Array.from(supportedPaths).filter(path => /\.zip$/i.test(path)));
+      const knownPaths = new Set(KNOWN_GAMES.map(game => game.path));
+      const catalog = Object.create(null);
+
+      // Fixed HTML IDs 1–15 stay fixed. New HTML files are sorted after them;
+      // ZIP archives are appended after HTML so adding a ZIP cannot renumber an
+      // existing game or any currently discovered HTML item.
+      for (const game of KNOWN_GAMES) {
+        if (htmlPaths.has(game.path)) {
+          catalog[game.id] = Object.freeze({ name: game.name, path: game.path, type: 'html', url: gameURLFromPath(game.path, game.ref) });
+        }
+      }
+      const additionalHTMLPaths = Array.from(htmlPaths)
+        .filter(path => !knownPaths.has(path))
+        .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+      additionalHTMLPaths.forEach((path, index) => {
+        const id = String(KNOWN_GAMES.length + index + 1);
+        catalog[id] = Object.freeze({ name: gameNameFromPath(path), path, type: 'html', url: gameURLFromPath(path) });
+      });
+      const additionalZIPPaths = Array.from(zipPaths)
+        .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+      additionalZIPPaths.forEach((path, index) => {
+        const id = String(KNOWN_GAMES.length + additionalHTMLPaths.length + index + 1);
+        catalog[id] = Object.freeze({ name: `${gameNameFromPath(path)} (ZIP)`, path, type: 'zip', url: gameURLFromPath(path) });
+      });
+      return Object.freeze(catalog);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function refreshGameCatalog() {
+    try {
+      GAMES = await discoverGameCatalog();
+      return true;
+    } catch (_) {
+      GAMES = BUILT_IN_GAMES;
+      return false;
+    }
+  }
+
+  function availableGameIds(catalog) {
+    return Object.keys(catalog)
+      .map(id => Number(id))
+      .filter(id => Number.isSafeInteger(id) && id > 0)
+      .sort((left, right) => left - right);
+  }
+
+  function formatGameIdRanges(ids) {
+    const ranges = [];
+    let start = ids[0];
+    let end = ids[0];
+    for (let index = 1; index < ids.length; index++) {
+      if (ids[index] === end + 1) {
+        end = ids[index];
+      } else {
+        ranges.push(start === end ? String(start) : `${start}–${end}`);
+        start = end = ids[index];
+      }
+    }
+    ranges.push(start === end ? String(start) : `${start}–${end}`);
+    return ranges.join(', ');
+  }
+
+  function formatSelectionMessage(catalog) {
+    const ids = availableGameIds(catalog);
+    if (!ids.length) return 'No HTML or ZIP games are currently available in the repository.';
+    const countText = `${ids.length} game${ids.length === 1 ? '' : 's'} available`;
+    if (String(window.name || '').trim() === 'penguinmod-game:catalog') {
+      const rows = Object.keys(catalog)
+        .sort((left, right) => Number(left) - Number(right))
+        .map(id => `${id}: ${catalog[id].name}`);
+      return ['PenguinMod game catalog', '', ...rows, '', 'Enter the ID in open game [ID] with [MODE] buffering.', `(${countText})`].join('\n');
+    }
+    if (ids[0] === 1 && ids[ids.length - 1] === ids.length) {
+      return `Append ?1 through ?${ids[ids.length - 1]} to this URL to select a game (${countText}).`;
+    }
+    return `Append one of these available IDs (${formatGameIdRanges(ids)}) to this URL to select a game (${countText}).`;
+  }
+
+  function formatAvailableIdsMessage(catalog) {
+    const ids = availableGameIds(catalog);
+    if (!ids.length) return 'No game IDs are currently available.';
+    const countText = `${ids.length} game${ids.length === 1 ? '' : 's'}`;
+    return `Available IDs: ${formatGameIdRanges(ids)} (${countText}).`;
+  }
+
+  function largeGameHint(gameId) {
+    const embedded = String(window.name || '').trim().startsWith('penguinmod-game:');
+    return embedded
+      ? `Use large or auto in the load-game buffering dropdown for files over 32 MiB.`
+      : `Reopen this URL as ?${gameId}&large=1 to opt into memory-heavy buffering.`;
+  }
+
+  function formatMiB(bytes) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  }
+
+  const ZIP_MAX_ENTRIES = 10000;
+  const ZIP_MAX_CENTRAL_DIRECTORY_BYTES = 32 * 1024 * 1024;
+  const ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024;
+  const ZIP_CRC_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let value = n;
+      for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      table[n] = value >>> 0;
+    }
+    return table;
+  })();
+
+  function zipUint64(view, offset, label) {
+    if (offset < 0 || offset + 8 > view.byteLength) throw new Error(`ZIP ${label} is truncated.`);
+    const value = (BigInt(view.getUint32(offset + 4, true)) << 32n) | BigInt(view.getUint32(offset, true));
+    if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`ZIP ${label} exceeds this browser's safe size range.`);
+    return Number(value);
+  }
+
+  function normalizeZipEntryPath(rawPath) {
+    if (typeof rawPath !== 'string' || !rawPath || rawPath.includes(String.fromCharCode(0))) throw new Error('ZIP contains an invalid file path.');
+    const path = rawPath.replace(/\\/g, '/');
+    if (path.startsWith('/') || /^[a-z]:/i.test(path)) throw new Error('ZIP contains an absolute file path.');
+    const parts = [];
+    for (const part of path.split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..') throw new Error('ZIP contains a path that escapes its archive.');
+      parts.push(part);
+    }
+    return parts.join('/');
+  }
+
+  function zipMimeType(path) {
+    const extension = (path.split('.').pop() || '').toLowerCase();
+    return ({
+      html: 'text/html;charset=utf-8', htm: 'text/html;charset=utf-8',
+      css: 'text/css;charset=utf-8', js: 'text/javascript;charset=utf-8', mjs: 'text/javascript;charset=utf-8',
+      json: 'application/json;charset=utf-8', webmanifest: 'application/manifest+json;charset=utf-8',
+      txt: 'text/plain;charset=utf-8', xml: 'application/xml;charset=utf-8', svg: 'image/svg+xml',
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+      avif: 'image/avif', apng: 'image/apng', ico: 'image/x-icon', wasm: 'application/wasm',
+      mp3: 'audio/mpeg', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg; codecs=opus',
+      wav: 'audio/wav', m4a: 'audio/mp4', flac: 'audio/flac', mp4: 'video/mp4', m4v: 'video/mp4',
+      webm: 'video/webm', ogv: 'video/ogg', woff: 'font/woff', woff2: 'font/woff2',
+      ttf: 'font/ttf', otf: 'font/otf', pdf: 'application/pdf', bin: 'application/octet-stream',
+      dat: 'application/octet-stream', data: 'application/octet-stream'
+    })[extension] || 'application/octet-stream';
+  }
+
+  async function parseZipArchive(zipBlob) {
+    if (!(zipBlob instanceof Blob) || zipBlob.size < 22) throw new Error('The selected ZIP archive is empty or truncated.');
+    const tailSize = Math.min(zipBlob.size, 22 + 0xffff);
+    const tailStart = zipBlob.size - tailSize;
+    const tailBuffer = await zipBlob.slice(tailStart).arrayBuffer();
+    const tail = new DataView(tailBuffer);
+    let endOffset = -1;
+    for (let offset = tail.byteLength - 22; offset >= 0; offset--) {
+      if (tail.getUint32(offset, true) !== 0x06054b50) continue;
+      const commentLength = tail.getUint16(offset + 20, true);
+      if (offset + 22 + commentLength === tail.byteLength) { endOffset = offset; break; }
+    }
+    if (endOffset < 0) throw new Error('ZIP end record was not found; the archive may be incomplete.');
+
+    const endAbsolute = tailStart + endOffset;
+    if (tail.getUint16(endOffset + 4, true) !== 0 || tail.getUint16(endOffset + 6, true) !== 0) {
+      throw new Error('Multi-volume ZIP archives are not supported.');
+    }
+    let entriesOnDisk = tail.getUint16(endOffset + 8, true);
+    let entryCount = tail.getUint16(endOffset + 10, true);
+    let centralSize = tail.getUint32(endOffset + 12, true);
+    let centralOffset = tail.getUint32(endOffset + 16, true);
+
+    if (entryCount === 0xffff || entriesOnDisk === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff) {
+      const locatorStart = endAbsolute - 20;
+      if (locatorStart < 0) throw new Error('ZIP64 locator is missing.');
+      const locatorBuffer = await zipBlob.slice(locatorStart, endAbsolute).arrayBuffer();
+      const locator = new DataView(locatorBuffer);
+      if (locator.getUint32(0, true) !== 0x07064b50 || locator.getUint32(4, true) !== 0) {
+        throw new Error('ZIP64 archives must use a single disk.');
+      }
+      const zip64Offset = zipUint64(locator, 8, 'ZIP64 directory offset');
+      const zip64Buffer = await zipBlob.slice(zip64Offset, zip64Offset + 56).arrayBuffer();
+      const zip64 = new DataView(zip64Buffer);
+      if (zip64.byteLength < 56 || zip64.getUint32(0, true) !== 0x06064b50) throw new Error('ZIP64 end record is invalid.');
+      if (zip64.getUint32(16, true) !== 0 || zip64.getUint32(20, true) !== 0) throw new Error('Multi-volume ZIP64 archives are not supported.');
+      entriesOnDisk = zipUint64(zip64, 24, 'per-disk entry count');
+      entryCount = zipUint64(zip64, 32, 'entry count');
+      centralSize = zipUint64(zip64, 40, 'central directory size');
+      centralOffset = zipUint64(zip64, 48, 'central directory offset');
+    }
+    if (entriesOnDisk !== entryCount) throw new Error('Multi-volume ZIP archives are not supported.');
+    if (entryCount > ZIP_MAX_ENTRIES) throw new Error(`ZIP has too many files (${entryCount}; maximum ${ZIP_MAX_ENTRIES}).`);
+    if (centralSize > ZIP_MAX_CENTRAL_DIRECTORY_BYTES) throw new Error('ZIP file index is too large to inspect safely.');
+    if (centralOffset + centralSize > zipBlob.size) throw new Error('ZIP central directory points outside the archive.');
+
+    const centralBuffer = await zipBlob.slice(centralOffset, centralOffset + centralSize).arrayBuffer();
+    const central = new DataView(centralBuffer);
+    const decoder = new TextDecoder('utf-8');
+    const entries = new Map();
+    let totalUncompressedBytes = 0;
+    let offset = 0;
+    let parsedCount = 0;
+    while (parsedCount < entryCount) {
+      if (offset + 46 > central.byteLength || central.getUint32(offset, true) !== 0x02014b50) {
+        throw new Error('ZIP central directory entry is invalid or truncated.');
+      }
+      const madeBy = central.getUint8(offset + 5);
+      const flags = central.getUint16(offset + 8, true);
+      const method = central.getUint16(offset + 10, true);
+      const crc32 = central.getUint32(offset + 16, true);
+      let compressedSize = central.getUint32(offset + 20, true);
+      let uncompressedSize = central.getUint32(offset + 24, true);
+      const nameLength = central.getUint16(offset + 28, true);
+      const extraLength = central.getUint16(offset + 30, true);
+      const commentLength = central.getUint16(offset + 32, true);
+      let diskStart = central.getUint16(offset + 34, true);
+      const externalAttributes = central.getUint32(offset + 38, true);
+      let localHeaderOffset = central.getUint32(offset + 42, true);
+      const nameStart = offset + 46;
+      const extraStart = nameStart + nameLength;
+      const end = extraStart + extraLength + commentLength;
+      if (end > central.byteLength) throw new Error('ZIP central directory filename or extra data is truncated.');
+      const rawName = decoder.decode(new Uint8Array(centralBuffer, nameStart, nameLength));
+      const isDirectory = rawName.endsWith('/') || !!(externalAttributes & 0x10);
+
+      if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localHeaderOffset === 0xffffffff || diskStart === 0xffff) {
+        let extraOffset = extraStart;
+        let foundZip64 = false;
+        while (extraOffset + 4 <= extraStart + extraLength) {
+          const tag = central.getUint16(extraOffset, true);
+          const length = central.getUint16(extraOffset + 2, true);
+          const dataStart = extraOffset + 4;
+          const dataEnd = dataStart + length;
+          if (dataEnd > extraStart + extraLength) throw new Error('ZIP extra field is truncated.');
+          if (tag === 0x0001) {
+            foundZip64 = true;
+            let cursor = dataStart;
+            if (uncompressedSize === 0xffffffff) { uncompressedSize = zipUint64(central, cursor, 'entry size'); cursor += 8; }
+            if (compressedSize === 0xffffffff) { compressedSize = zipUint64(central, cursor, 'compressed entry size'); cursor += 8; }
+            if (localHeaderOffset === 0xffffffff) { localHeaderOffset = zipUint64(central, cursor, 'local header offset'); cursor += 8; }
+            if (diskStart === 0xffff) diskStart = central.getUint32(cursor, true);
+            break;
+          }
+          extraOffset = dataEnd;
+        }
+        if (!foundZip64) throw new Error('ZIP64 entry is missing its size metadata.');
+      }
+      if (diskStart !== 0) throw new Error('Multi-volume ZIP entries are not supported.');
+      if (flags & 0x2041) throw new Error('Encrypted ZIP entries are not supported.');
+      const isUnixSymlink = madeBy === 3 && ((externalAttributes >>> 16) & 0xf000) === 0xa000;
+      if (isUnixSymlink) throw new Error('ZIP symbolic links are not allowed.');
+      const path = normalizeZipEntryPath(rawName);
+      if (!isDirectory && path) {
+        if (method !== 0 && method !== 8) throw new Error(`ZIP compression method ${method} is unsupported; use Store or Deflate.`);
+        if (entries.has(path)) throw new Error(`ZIP contains a duplicate path: ${path}`);
+        if (localHeaderOffset + 30 > zipBlob.size) throw new Error(`ZIP entry points outside the archive: ${path}`);
+        totalUncompressedBytes += uncompressedSize;
+        if (!Number.isSafeInteger(totalUncompressedBytes)) throw new Error('ZIP expanded size exceeds this browser\'s safe size range.');
+        if (totalUncompressedBytes > ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES) {
+          throw new Error(`ZIP expands beyond the ${formatMiB(ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES)} safety limit.`);
+        }
+        entries.set(path, Object.freeze({ path, flags, method, crc32, compressedSize, uncompressedSize, localHeaderOffset, rawName }));
+      }
+      offset = end;
+      parsedCount++;
+    }
+    if (entries.size === 0) throw new Error('ZIP contains no usable files.');
+    return Object.freeze({ entries, totalUncompressedBytes });
+  }
+
+  function selectZipHTML(entries) {
+    const htmlEntries = Array.from(entries.values()).filter(entry => /\.html?$/i.test(entry.path));
+    if (!htmlEntries.length) throw new Error('ZIP has no .html entry point. Add index.html or include exactly one HTML file.');
+    const rootIndex = htmlEntries.find(entry => entry.path.toLowerCase() === 'index.html');
+    if (rootIndex) return rootIndex.path;
+    const indexFiles = htmlEntries.filter(entry => entry.path.split('/').pop().toLowerCase() === 'index.html');
+    if (indexFiles.length === 1) return indexFiles[0].path;
+    if (indexFiles.length > 1) throw new Error(`ZIP has multiple index.html files: ${indexFiles.slice(0, 5).map(entry => entry.path).join(', ')}`);
+    if (htmlEntries.length === 1) return htmlEntries[0].path;
+    throw new Error(`ZIP has multiple HTML files and no unique index.html: ${htmlEntries.slice(0, 6).map(entry => entry.path).join(', ')}`);
+  }
+
+  async function extractZipEntryBlob(zipBlob, entry, signal) {
+    const headerBuffer = await zipBlob.slice(entry.localHeaderOffset, entry.localHeaderOffset + 30).arrayBuffer();
+    const header = new DataView(headerBuffer);
+    if (header.byteLength < 30 || header.getUint32(0, true) !== 0x04034b50) throw new Error(`ZIP local header is invalid: ${entry.path}`);
+    const localFlags = header.getUint16(6, true);
+    const localMethod = header.getUint16(8, true);
+    const nameLength = header.getUint16(26, true);
+    const extraLength = header.getUint16(28, true);
+    if (localMethod !== entry.method || ((localFlags | entry.flags) & 0x2041)) throw new Error(`ZIP local header does not match its directory entry: ${entry.path}`);
+    const localNameBuffer = await zipBlob.slice(entry.localHeaderOffset + 30, entry.localHeaderOffset + 30 + nameLength).arrayBuffer();
+    const localName = new TextDecoder('utf-8').decode(localNameBuffer);
+    if (normalizeZipEntryPath(localName) !== entry.path) throw new Error(`ZIP local filename does not match its directory entry: ${entry.path}`);
+    const dataStart = entry.localHeaderOffset + 30 + nameLength + extraLength;
+    const dataEnd = dataStart + entry.compressedSize;
+    if (dataEnd > zipBlob.size) throw new Error(`ZIP entry data is truncated: ${entry.path}`);
+    const compressedBlob = zipBlob.slice(dataStart, dataEnd);
+    if (entry.method === 0 && entry.compressedSize !== entry.uncompressedSize) throw new Error(`Stored ZIP entry has an invalid size: ${entry.path}`);
+
+    let size = 0;
+    let crc = 0xffffffff;
+    const verifier = new TransformStream({
+      transform(chunk, controller) {
+        if (signal && signal.aborted) throw new DOMException('Loading timed out or was cancelled.', 'AbortError');
+        const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+        size += bytes.byteLength;
+        if (size > entry.uncompressedSize) throw new Error(`ZIP entry expanded beyond its declared size: ${entry.path}`);
+        for (let index = 0; index < bytes.length; index++) crc = ZIP_CRC_TABLE[(crc ^ bytes[index]) & 0xff] ^ (crc >>> 8);
+        controller.enqueue(bytes);
+      },
+      flush() {
+        if (signal && signal.aborted) throw new DOMException('Loading timed out or was cancelled.', 'AbortError');
+        if (size !== entry.uncompressedSize) throw new Error(`ZIP entry size check failed: ${entry.path}`);
+        if (((crc ^ 0xffffffff) >>> 0) !== entry.crc32) throw new Error(`ZIP entry checksum failed: ${entry.path}`);
+      }
+    });
+    let outputStream = compressedBlob.stream();
+    if (entry.method === 8) {
+      if (typeof DecompressionStream !== 'function') throw new Error('This browser does not support ZIP Deflate decompression.');
+      try { outputStream = outputStream.pipeThrough(new DecompressionStream('deflate-raw')); }
+      catch (_) { throw new Error('This browser cannot decode raw Deflate ZIP entries.'); }
+    }
+    return new Response(outputStream.pipeThrough(verifier), { headers: { 'Content-Type': zipMimeType(entry.path) } }).blob();
+  }
+
+  function safeJSONForScript(value) {
+    return JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  }
+
+  function runZipOuterFrame(token, gameName, innerBootstrap) {
+    const status = document.getElementById('zip-status');
+    const host = document.getElementById('zip-host');
+    let innerFrame = null;
+    let files = null;
+    let entryPath = '';
+    let initialized = false;
+    const send = (type, extra = {}) => {
+      try { window.parent.postMessage(Object.assign({ type, token }, extra), '*'); } catch (_) {}
+    };
+    const show = message => { if (status) status.textContent = message; };
+
+    window.addEventListener('message', event => {
+      const data = event.data;
+      if (event.source === window.parent && data && data.type === 'pmzip-init' && data.token === token) {
+        if (initialized) return;
+        initialized = true;
+        files = data.files || [];
+        entryPath = data.entryPath;
+        show(`Starting ${gameName}…`);
+        innerFrame = document.createElement('iframe');
+        innerFrame.title = gameName;
+        innerFrame.setAttribute('allow', 'fullscreen; autoplay; gamepad');
+        innerFrame.setAttribute('allowfullscreen', '');
+        innerFrame.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;display:block';
+        innerFrame.srcdoc = innerBootstrap;
+        host.appendChild(innerFrame);
+      } else if (innerFrame && event.source === innerFrame.contentWindow && data && data.token === token) {
+        if (data.type === 'pmzip-inner-ready') {
+          try {
+            innerFrame.contentWindow.postMessage({ type: 'pmzip-inner-init', token, entryPath, files }, '*');
+            files = null;
+          } catch (error) {
+            show(`Could not pass ZIP assets to the game frame: ${error && error.message ? error.message : error}`);
+            send('pmzip-error', { message: 'Could not pass ZIP assets to the game frame.' });
+          }
+        } else if (data.type === 'pmzip-inner-error') {
+          show(data.message || 'The ZIP game could not be started.');
+          send('pmzip-error', { message: data.message || 'The ZIP game could not be started.' });
+        } else if (data.type === 'pmzip-inner-started') {
+          if (status) status.hidden = true;
+          send('pmzip-started');
+        }
+      }
+    });
+    send('pmzip-ready');
+  }
+
+  function runZipInnerFrame(token, gameName) {
+    const send = (type, extra = {}) => {
+      try { window.parent.postMessage(Object.assign({ type, token }, extra), '*'); } catch (_) {}
+    };
+    let waiting = true;
+    send('pmzip-inner-ready');
+
+    function encodePath(path) {
+      return String(path).split('/').map(segment => encodeURIComponent(segment)).join('/');
+    }
+    function normalizeRuntimePath(path) {
+      const parts = [];
+      for (const segment of String(path).replace(/\\/g, '/').split('/')) {
+        if (!segment || segment === '.') continue;
+        if (segment === '..') return null;
+        parts.push(segment);
+      }
+      return parts.join('/');
+    }
+    function safeJson(value) { return JSON.stringify(value).replace(/</g, '\\u003c'); }
+    function mimeType(path) {
+      const extension = (path.split('.').pop() || '').toLowerCase();
+      return ({
+        html: 'text/html;charset=utf-8', htm: 'text/html;charset=utf-8', css: 'text/css;charset=utf-8',
+        js: 'text/javascript;charset=utf-8', mjs: 'text/javascript;charset=utf-8', json: 'application/json;charset=utf-8',
+        svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+        webp: 'image/webp', avif: 'image/avif', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav',
+        m4a: 'audio/mp4', mp4: 'video/mp4', webm: 'video/webm', wasm: 'application/wasm',
+        woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf'
+      })[extension] || 'application/octet-stream';
+    }
+    function pathFromURL(value, fromPath, rootURL, rootPath, fileMap) {
+      let raw = typeof value === 'string' ? value : (value && typeof value === 'object' && 'url' in value ? value.url : String(value || ''));
+      raw = String(raw || '').trim();
+      if (!raw || raw[0] === '#' || /^(?:data|blob|javascript|mailto|tel):/i.test(raw) || raw.startsWith('//')) return null;
+      try {
+        let resolved;
+        if (raw.startsWith('/')) resolved = new URL(raw.replace(/^\/+/, ''), rootURL);
+        else {
+          const fromURL = new URL(encodePath(fromPath), rootURL);
+          resolved = new URL(raw.replace(/\\/g, '/'), fromURL);
+        }
+        const root = new URL(rootURL);
+        if (resolved.origin !== root.origin || !resolved.pathname.startsWith(rootPath)) return null;
+        const decoded = decodeURIComponent(resolved.pathname.slice(rootPath.length));
+        const path = normalizeRuntimePath(decoded);
+        return path && fileMap.has(path) ? path : null;
+      } catch (_) { return null; }
+    }
+    function virtualURL(path, rootURL) { return new URL(encodePath(path), rootURL).href; }
+    function rewriteCSS(text, fromPath, rootURL, rootPath, fileMap, urls) {
+      return String(text)
+        .replace(/url\(\s*(?:(['\"])(.*?)\1|([^)]*?))\s*\)/gi, (whole, quote, quoted, bare) => {
+          const reference = String(quoted === undefined ? bare || '' : quoted).trim();
+          const path = pathFromURL(reference, fromPath, rootURL, rootPath, fileMap);
+          return path && urls.has(path) ? `url("${urls.get(path)}")` : whole;
+        })
+        .replace(/@import\s+(['\"])([^'\"]+)\1/gi, (whole, quote, reference) => {
+          const path = pathFromURL(reference, fromPath, rootURL, rootPath, fileMap);
+          return path && urls.has(path) ? `@import url("${urls.get(path)}")` : whole;
+        });
+    }
+    async function replaceAsync(text, expression, callback) {
+      const source = String(text);
+      let output = '';
+      let cursor = 0;
+      for (const match of source.matchAll(expression)) {
+        output += source.slice(cursor, match.index);
+        output += await callback(match);
+        cursor = match.index + match[0].length;
+      }
+      return output + source.slice(cursor);
+    }
+    function rewriteModuleSource(source, fromPath, rootURL, rootPath, fileMap) {
+      const rewrite = reference => {
+        const path = pathFromURL(reference, fromPath, rootURL, rootPath, fileMap);
+        return path ? virtualURL(path, rootURL) : reference;
+      };
+      let output = String(source).replace(/((?:\bimport|\bexport)\s+(?:[^'";]*?\sfrom\s+)?)(['"])([^'"]+)\2/g,
+        (whole, prefix, quote, reference) => `${prefix}${quote}${rewrite(reference)}${quote}`);
+      output = output.replace(/(\bimport\s*\(\s*)(['"])([^'"]+)\2(\s*\))/g,
+        (whole, prefix, quote, reference, suffix) => `${prefix}${quote}${rewrite(reference)}${quote}${suffix}`);
+      output = output.replace(/\bimport\.meta\.url\b/g, safeJson(virtualURL(fromPath, rootURL)));
+      return output;
+    }
+    async function replaceCssFile(path, rootURL, rootPath, fileMap, urls, states, stack) {
+      if (states.has(path)) return states.get(path);
+      if (stack.has(path)) return urls.get(path);
+      const sourceBlob = fileMap.get(path);
+      if (!sourceBlob || sourceBlob.size > 16 * 1024 * 1024) return urls.get(path);
+      stack.add(path);
+      let text = await sourceBlob.text();
+      const urlPattern = /url\(\s*(?:(['\"])(.*?)\1|([^)]*?))\s*\)/gi;
+      text = await replaceAsync(text, urlPattern, async match => {
+        const reference = String(match[2] === undefined ? match[3] || '' : match[2]).trim();
+        const target = pathFromURL(reference, path, rootURL, rootPath, fileMap);
+        if (!target) return match[0];
+        const targetURL = /\.css$/i.test(target)
+          ? await replaceCssFile(target, rootURL, rootPath, fileMap, urls, states, stack)
+          : urls.get(target);
+        return targetURL ? `url("${targetURL}")` : match[0];
+      });
+      const importPattern = /@import\s+(['\"])([^'\"]+)\1/gi;
+      text = await replaceAsync(text, importPattern, async match => {
+        const target = pathFromURL(match[2], path, rootURL, rootPath, fileMap);
+        if (!target) return match[0];
+        const targetURL = /\.css$/i.test(target)
+          ? await replaceCssFile(target, rootURL, rootPath, fileMap, urls, states, stack)
+          : urls.get(target);
+        return targetURL ? `@import url("${targetURL}")` : match[0];
+      });
+      const replacement = URL.createObjectURL(new Blob([text], { type: 'text/css;charset=utf-8' }));
+      const previous = urls.get(path);
+      urls.set(path, replacement);
+      states.set(path, replacement);
+      stack.delete(path);
+      try { if (previous) URL.revokeObjectURL(previous); } catch (_) {}
+      return replacement;
+    }
+
+    window.addEventListener('message', async event => {
+      const data = event.data;
+      if (!waiting || event.source !== window.parent || !data || data.type !== 'pmzip-inner-init' || data.token !== token) return;
+      waiting = false;
+      try {
+        const fileMap = new Map(data.files || []);
+        const entryPath = normalizeRuntimePath(data.entryPath);
+        if (!entryPath || !fileMap.has(entryPath)) throw new Error('ZIP entry HTML is missing.');
+        const entryBlob = fileMap.get(entryPath);
+        const rootURL = `https://zip.invalid/${encodeURIComponent(token)}/`;
+        const rootPath = new URL(rootURL).pathname;
+        const entryDirectory = entryPath.includes('/') ? entryPath.slice(0, entryPath.lastIndexOf('/') + 1) : '';
+        const entryBase = new URL(encodePath(entryDirectory), rootURL).href;
+        const urls = new Map();
+        for (const [path, blob] of fileMap) urls.set(path, URL.createObjectURL(blob));
+
+        // Module imports become absolute virtual archive URLs and are redirected
+        // to archive-local module Blob URLs by an import map. This also handles
+        // cyclic import graphs without depending on Blob URL creation order.
+        const importMappings = Object.create(null);
+        for (const [path, blob] of fileMap) {
+          if (!/\.(?:m?js)$/i.test(path) || blob.size > 16 * 1024 * 1024) continue;
+          const source = await blob.text();
+          const rewritten = rewriteModuleSource(source, path, rootURL, rootPath, fileMap);
+          if (rewritten !== source) {
+            const previous = urls.get(path);
+            urls.set(path, URL.createObjectURL(new Blob([rewritten], { type: mimeType(path) })));
+            try { if (previous) URL.revokeObjectURL(previous); } catch (_) {}
+          }
+          importMappings[virtualURL(path, rootURL)] = urls.get(path);
+        }
+
+        const cssStates = new Map();
+        for (const path of fileMap.keys()) {
+          if (/\.css$/i.test(path)) await replaceCssFile(path, rootURL, rootPath, fileMap, urls, cssStates, new Set());
+        }
+
+        const html = await entryBlob.text();
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        const head = parsed.head || parsed.documentElement.insertBefore(parsed.createElement('head'), parsed.body || null);
+        const existingBases = Array.from(parsed.querySelectorAll('base'));
+        let baseElement = existingBases.shift();
+        if (!baseElement) baseElement = parsed.createElement('base');
+        for (const extraBase of existingBases) extraBase.remove();
+        baseElement.setAttribute('href', entryBase);
+        head.insertBefore(baseElement, head.firstChild);
+
+        for (const element of Array.from(parsed.querySelectorAll('*'))) {
+          if (element.tagName === 'BASE') continue;
+          const urlAttributes = ['src', 'href', 'poster', 'data'];
+          for (const attribute of urlAttributes) {
+            if (!element.hasAttribute(attribute)) continue;
+            const original = element.getAttribute(attribute);
+            if ((element.tagName === 'A' || element.tagName === 'AREA') && /\.html?$/i.test(original.split(/[?#]/, 1)[0])) continue;
+            const path = pathFromURL(original, entryPath, rootURL, rootPath, fileMap);
+            if (!path || !urls.has(path)) continue;
+            element.setAttribute(`data-pmzip-original-${attribute}`, virtualURL(path, rootURL));
+            element.setAttribute(attribute, urls.get(path));
+            element.removeAttribute('integrity');
+          }
+          if (element.hasAttribute('srcset')) {
+            const sourceSet = element.getAttribute('srcset');
+            if (!/^\s*data:/i.test(sourceSet)) {
+              const rewritten = sourceSet.split(',').map(candidate => {
+                const parts = candidate.trim().split(/\s+/);
+                const path = pathFromURL(parts[0], entryPath, rootURL, rootPath, fileMap);
+                if (path && urls.has(path)) parts[0] = urls.get(path);
+                return parts.join(' ');
+              }).join(', ');
+              element.setAttribute('srcset', rewritten);
+            }
+          }
+          if (element.hasAttribute('style')) element.setAttribute('style', rewriteCSS(element.getAttribute('style'), entryPath, rootURL, rootPath, fileMap, urls));
+          if (element.tagName === 'STYLE') element.textContent = rewriteCSS(element.textContent, entryPath, rootURL, rootPath, fileMap, urls);
+          if (element.tagName === 'SCRIPT' && !element.hasAttribute('src') && element.getAttribute('type') === 'module') {
+            element.textContent = rewriteModuleSource(element.textContent, entryPath, rootURL, rootPath, fileMap);
+          }
+        }
+
+        const importMapElement = parsed.querySelector('script[type="importmap"]');
+        if (Object.keys(importMappings).length) {
+          let importMap = { imports: {} };
+          if (importMapElement) {
+            try { importMap = Object.assign({ imports: {} }, JSON.parse(importMapElement.textContent || '{}')); } catch (_) {}
+            importMap.imports = Object.assign({}, importMappings, importMap.imports || {});
+            importMapElement.textContent = safeJson(importMap);
+            head.insertBefore(importMapElement, baseElement.nextSibling);
+          } else {
+            const newImportMap = parsed.createElement('script');
+            newImportMap.type = 'importmap';
+            newImportMap.textContent = safeJson({ imports: importMappings });
+            head.insertBefore(newImportMap, baseElement.nextSibling);
+          }
+        }
+
+        const vfsMap = Object.create(null);
+        for (const [path, url] of urls) vfsMap[path] = url;
+        const shim = parsed.createElement('script');
+        shim.textContent = `(function(){
+  const rootURL=${safeJson(rootURL)};
+  const rootPath=${safeJson(rootPath)};
+  const fileURLs=${safeJson(vfsMap)};
+  const entryPath=${safeJson(entryPath)};
+  function normalize(p){const a=[];for(const s of String(p).replace(/\\\\/g,'/').split('/')){if(!s||s==='.')continue;if(s==='..')return null;a.push(s);}return a.join('/');}
+  function pathFor(value){let raw=value&&typeof value==='object'&&'url'in value?value.url:String(value||'');raw=String(raw||'').trim();if(!raw||raw[0]==='#'||/^(?:data|blob|javascript|mailto|tel):/i.test(raw)||raw.startsWith('//'))return null;try{let u;if(raw.startsWith('/'))u=new URL(raw.replace(/^\\/+/,''),rootURL);else u=new URL(raw,new URL(entryPath.split('/').map(encodeURIComponent).join('/'),rootURL));const root=new URL(rootURL);if(u.origin!==root.origin||!u.pathname.startsWith(rootPath))return null;const p=normalize(decodeURIComponent(u.pathname.slice(rootPath.length)));return p&&Object.prototype.hasOwnProperty.call(fileURLs,p)?p:null;}catch(_){return null;}}
+  function virtualURL(value){const p=pathFor(value);return p?new URL(p.split('/').map(encodeURIComponent).join('/'),rootURL).href:null;}
+  function resolve(value){const p=pathFor(value);return p?fileURLs[p]:null;}
+  const nativeFetch=window.fetch.bind(window);
+  window.fetch=function(input,init){const local=resolve(input);if(!local)return nativeFetch(input,init);try{const request=input instanceof Request?new Request(local,input):local;return nativeFetch(request,init);}catch(_){return nativeFetch(local,init);}};
+  const xp=XMLHttpRequest.prototype,nativeOpen=xp.open;
+  xp.open=function(method,url,...rest){return nativeOpen.call(this,method,resolve(url)||url,...rest);};
+  const nativeSet=Element.prototype.setAttribute;
+  function allowed(element,name){name=String(name).toLowerCase();return name==='src'||name==='href'||name==='poster'||(name==='data'&&element.tagName==='OBJECT');}
+  Element.prototype.setAttribute=function(name,value){if(allowed(this,name)){const original=String(value),local=resolve(original);if(local){nativeSet.call(this,'data-pmzip-original-'+String(name).toLowerCase(),virtualURL(original)||original);return nativeSet.call(this,name,local);}}return nativeSet.call(this,name,value);};
+  function patch(proto,property){if(!proto)return;const d=Object.getOwnPropertyDescriptor(proto,property);if(!d||!d.get||!d.set)return;Object.defineProperty(proto,property,{configurable:true,enumerable:d.enumerable,get:function(){return this.getAttribute('data-pmzip-original-'+property)||d.get.call(this);},set:function(value){const original=String(value),local=resolve(original);if(local){nativeSet.call(this,'data-pmzip-original-'+property,virtualURL(original)||original);return d.set.call(this,local);}return d.set.call(this,value);}});}
+  patch(HTMLImageElement.prototype,'src');patch(HTMLScriptElement.prototype,'src');patch(HTMLLinkElement.prototype,'href');patch(HTMLIFrameElement.prototype,'src');patch(HTMLMediaElement.prototype,'src');patch(HTMLSourceElement.prototype,'src');patch(HTMLTrackElement.prototype,'src');patch(HTMLObjectElement.prototype,'data');patch(HTMLEmbedElement.prototype,'src');patch(HTMLAnchorElement.prototype,'href');
+  const NativeWorker=window.Worker;if(NativeWorker){function ZipWorker(url,options){return new NativeWorker(resolve(url)||url,options);}ZipWorker.prototype=NativeWorker.prototype;try{Object.setPrototypeOf(ZipWorker,NativeWorker);}catch(_){}window.Worker=ZipWorker;}
+  if(window.SharedWorker){const NativeSharedWorker=window.SharedWorker;function ZipSharedWorker(url,options){return new NativeSharedWorker(resolve(url)||url,options);}ZipSharedWorker.prototype=NativeSharedWorker.prototype;try{Object.setPrototypeOf(ZipSharedWorker,NativeSharedWorker);}catch(_){}window.SharedWorker=ZipSharedWorker;}
+  window.addEventListener('pagehide',function(){for(const url of Object.values(fileURLs)){try{URL.revokeObjectURL(url);}catch(_){}}});
+})();`;
+        const scriptPosition = importMapElement ? importMapElement.nextSibling : baseElement.nextSibling;
+        head.insertBefore(shim, scriptPosition);
+
+        const finalHTML = '<!doctype html>' + parsed.documentElement.outerHTML;
+        fileMap.clear();
+        document.open();
+        document.write(finalHTML);
+        document.close();
+        send('pmzip-inner-started');
+      } catch (error) {
+        send('pmzip-inner-error', { message: error && error.message ? error.message : String(error) });
+      }
+    });
+  }
+
+  function makeZipInnerBootstrapDocument(token, gameName) {
+    const closeScript = '</scr' + 'ipt>';
+    const runtime = `(${runZipInnerFrame.toString()})(${safeJSONForScript(token)},${safeJSONForScript(gameName)});`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>${escapeAttribute(gameName)}</title><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000;color:#fff;font:14px/1.5 system-ui,sans-serif}body{display:grid;place-items:center}#zip-inner-status{padding:16px;text-align:center}</style></head><body><div id="zip-inner-status">Reading ZIP files…</div><script>${runtime}${closeScript}</body></html>`;
+  }
+
+  function makeZipBootstrapDocument(token, gameName) {
+    const closeScript = '</scr' + 'ipt>';
+    const innerBootstrap = makeZipInnerBootstrapDocument(token, gameName);
+    const runtime = `(${runZipOuterFrame.toString()})(${safeJSONForScript(token)},${safeJSONForScript(gameName)},${safeJSONForScript(innerBootstrap)});`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>${escapeAttribute(gameName)} — ZIP</title><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000;color:#fff;font:14px/1.5 system-ui,sans-serif}#zip-status{position:fixed;inset:0;display:grid;place-items:center;text-align:center;padding:24px;background:#080a0f;z-index:1}#zip-status[hidden]{display:none!important}#zip-host{position:fixed;inset:0}</style></head><body><div id="zip-status">Preparing ${escapeAttribute(gameName)}…</div><div id="zip-host"></div><script>${runtime}${closeScript}</body></html>`;
+  }
+
+  function extractCDATAHTMLFromScriptWrapper(source) {
+    // Some game files document.write() an XML wrapper whose CDATA section
+    // contains the actual HTML document. Most are safe to unwrap directly.
+    const callToken = 'document.write("';
+    const callIndex = source.lastIndexOf(callToken);
+    if (callIndex < 0) return null;
+    const literalStart = callIndex + callToken.length - 1;
+
+    let escaped = false;
+    let literalEnd = -1;
+    for (let i = literalStart + 1; i < source.length; i++) {
+      const character = source[i];
+      if (escaped) {
+        escaped = false;
+      } else if (character.charCodeAt(0) === 92) {
+        escaped = true;
+      } else if (character === '"') {
+        literalEnd = i;
+        break;
+      }
+    }
+    if (literalEnd < 0) return null;
+
+    let writtenText;
+    try {
+      writtenText = JSON.parse(source.slice(literalStart, literalEnd + 1));
+    } catch (_) {
+      return null;
+    }
+
+    const cdataStart = writtenText.indexOf('<![CDATA[');
+    const cdataEnd = writtenText.lastIndexOf(']]' + '>');
+    if (cdataStart < 0 || cdataEnd <= cdataStart) return null;
+    const innerHTML = writtenText.slice(cdataStart + 9, cdataEnd);
+
+    const trimmedHTML = innerHTML.trimStart().toLowerCase();
+    if (!trimmedHTML.startsWith('<!doctype html') && !trimmedHTML.startsWith('<html')) return null;
+    return innerHTML;
+  }
+
+  function prepareGameOneWrapper(source) {
+    // Preserve the original outer script: it extracts the embedded Ruffle
+    // assets and rewrites the first .swf request to the intended soccer game.
+    // Only replace the unavailable stylesheet inside its document.write HTML
+    // with equivalent inline sizing rules for the sandboxed frame.
+    const callToken = 'document.write("';
+    const callIndex = source.lastIndexOf(callToken);
+    if (callIndex < 0) return source;
+    const literalStart = callIndex + callToken.length - 1;
+
+    let escaped = false;
+    let literalEnd = -1;
+    for (let i = literalStart + 1; i < source.length; i++) {
+      const character = source[i];
+      if (escaped) escaped = false;
+      else if (character.charCodeAt(0) === 92) escaped = true;
+      else if (character === '"') {
+        literalEnd = i;
+        break;
+      }
+    }
+    if (literalEnd < 0) return source;
+
+    let writtenText;
+    try {
+      writtenText = JSON.parse(source.slice(literalStart, literalEnd + 1));
+    } catch (_) {
+      return source;
+    }
+
+    const fullscreenCSS = '<style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000}object,embed,ruffle-object,ruffle-embed,ruffle-player{display:block;width:100%;height:100%}</style>';
+    const unavailableStylesheet = /<link\b(?=[^>]*\bhref=["']https:\/\/cdn\.jsdelivr\.net\/gh\/AndreajnRcm4\/b398dl2h74v@9a23fbb2373d743a564873251cbb57736ebc1f73\/style\.css["'])[^>]*\/?\s*>/i;
+    let preparedText;
+    if (unavailableStylesheet.test(writtenText)) {
+      preparedText = writtenText.replace(unavailableStylesheet, fullscreenCSS);
+    } else {
+      const headEnd = /<\/head\s*>/i;
+      if (!headEnd.test(writtenText)) return source;
+      preparedText = writtenText.replace(headEnd, `${fullscreenCSS}</head>`);
+    }
+
+    // Escape closing script tags for the outer HTML parser while preserving
+    // their value when the JavaScript string is decoded at runtime.
+    const safeLiteral = JSON.stringify(preparedText).replace(/<\/script/gi, '<\\/script');
+    return source.slice(0, literalStart) + safeLiteral + source.slice(literalEnd + 1);
+  }
+
+  function prepareGameThreeUnity(html) {
+    // srcdoc keeps document.URL as about:srcdoc, even when a <base> is set.
+    // Resolve Unity's relative StreamingAssets URL against the injected base.
+    let prepared = html.replace(
+      /new URL\(\s*u\.streamingAssetsUrl\s*,\s*document\.URL\s*\)\.href/,
+      'new URL(u.streamingAssetsUrl, document.baseURI).href'
+    );
+
+    // Storage APIs are denied to this opaque-origin sandbox. Shadow Cache API
+    // as unavailable so Unity uses its normal fetch path, and provide a
+    // frame-local localStorage substitute for the game's save/logging hooks.
+    const storageShim = `<script>
+(function() {
+  const values = new Map();
+  const methods = {
+    clear: function() { values.clear(); },
+    getItem: function(key) {
+      key = String(key);
+      return values.has(key) ? values.get(key) : null;
+    },
+    key: function(index) {
+      return Array.from(values.keys())[Number(index)] ?? null;
+    },
+    removeItem: function(key) { values.delete(String(key)); },
+    setItem: function(key, value) { values.set(String(key), String(value)); }
+  };
+  const target = {};
+  const storage = new Proxy(target, {
+    get: function(object, key, receiver) {
+      if (key === 'length') return values.size;
+      if (Object.prototype.hasOwnProperty.call(methods, key)) return methods[key];
+      if (typeof key === 'string' && values.has(key)) return values.get(key);
+      return Reflect.get(object, key, receiver);
+    },
+    set: function(_object, key, value) {
+      if (typeof key !== 'string') return false;
+      values.set(key, String(value));
+      return true;
+    },
+    ownKeys: function() { return Array.from(values.keys()); },
+    getOwnPropertyDescriptor: function(_object, key) {
+      if (typeof key !== 'string' || !values.has(key)) return undefined;
+      return { configurable: true, enumerable: true, writable: true, value: values.get(key) };
+    },
+    deleteProperty: function(_object, key) { return values.delete(String(key)); }
+  });
+  try { Object.defineProperty(window, 'localStorage', { configurable: true, value: storage }); } catch (_) {}
+  try { Object.defineProperty(window, 'caches', { configurable: true, value: undefined }); } catch (_) {}
+})();
+</scr` + `ipt>`;
+    const headPattern = /<head\b[^>]*>/i;
+    if (headPattern.test(prepared)) {
+      prepared = prepared.replace(headPattern, match => `${match}${storageShim}`);
+    }
+    return prepared;
+  }
+
+  function escapeAttribute(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+
+  function addBaseForNormalHTML(html, baseURL) {
+    // Leave script-first wrappers intact unless they were unwrapped above.
+    const scriptFirst = /^\s*(?:<!doctype\b[^>]*>\s*)?<script\b/i.test(html);
+    if (scriptFirst) return html;
+
+    const baseTag = `<base href="${escapeAttribute(baseURL)}">`;
+    const existingBase = /<base\b[^>]*>/i;
+    if (existingBase.test(html)) return html.replace(existingBase, baseTag);
+    const headPattern = /<head\b[^>]*>/i;
+    if (headPattern.test(html)) return html.replace(headPattern, match => `${match}${baseTag}`);
+    const htmlPattern = /<html\b[^>]*>/i;
+    if (htmlPattern.test(html)) return html.replace(htmlPattern, match => `${match}<head>${baseTag}</head>`);
+    return `<!doctype html><html><head>${baseTag}</head><body>${html}</body></html>`;
+  }
+
+  function addMemoryCookieShim(html, gameId) {
+    // Paper.io, Tiny Fishing, and Drive Mad use document.cookie. The sandboxed
+    // iframe's opaque origin correctly blocks real cookies, so provide
+    // frame-local, memory-only storage without granting allow-same-origin.
+    if (gameId !== '2' && gameId !== '7' && gameId !== '8') return html;
+    const headPattern = /<head\b[^>]*>/i;
+    if (!headPattern.test(html)) return html;
+    const shim = `<script>
+(function() {
+  const jar = new Map();
+  Object.defineProperty(document, 'cookie', {
+    configurable: true,
+    enumerable: true,
+    get: function() {
+      const now = Date.now();
+      const pairs = [];
+      jar.forEach(function(cookie, name) {
+        if (cookie.expiresAt !== null && cookie.expiresAt <= now) jar.delete(name);
+        else pairs.push(name + '=' + cookie.value);
+      });
+      return pairs.join('; ');
+    },
+    set: function(rawCookie) {
+      const parts = String(rawCookie).split(';');
+      const pair = (parts.shift() || '').trim();
+      const equals = pair.indexOf('=');
+      if (equals < 1) return;
+      const name = pair.slice(0, equals).trim();
+      const value = pair.slice(equals + 1).trim();
+      let expiresAt = null;
+      let remove = false;
+      for (const attribute of parts) {
+        const separator = attribute.indexOf('=');
+        if (separator < 0) continue;
+        const key = attribute.slice(0, separator).trim().toLowerCase();
+        const attributeValue = attribute.slice(separator + 1).trim();
+        if (key === 'max-age') {
+          const seconds = Number(attributeValue);
+          if (Number.isFinite(seconds)) {
+            expiresAt = Date.now() + seconds * 1000;
+            if (seconds <= 0) remove = true;
+          }
+        } else if (key === 'expires') {
+          const time = Date.parse(attributeValue);
+          if (Number.isFinite(time)) {
+            expiresAt = time;
+            if (time <= Date.now()) remove = true;
+          }
+        }
+      }
+      if (remove) jar.delete(name);
+      else jar.set(name, { value: value, expiresAt: expiresAt });
+    }
+  });
+})();
+</scr` + `ipt>`;
+    return html.replace(headPattern, match => `${match}${shim}`);
+  }
+
+  function memoryStorageShimForGame(gameId) {
+    const options = {
+      '5': { localStorage: true, sessionStorage: true, caches: true },
+      '6': { localStorage: true, sessionStorage: true, caches: true },
+      '9': { sessionStorage: true, caches: true },
+      '11': { localStorage: true }
+    }[gameId];
+    if (!options) return '';
+
+    const installs = [];
+    if (options.localStorage) {
+      installs.push("try { Object.defineProperty(window, 'localStorage', { configurable: true, value: makeMemoryStorage() }); } catch (_) {}");
+    }
+    if (options.sessionStorage) {
+      installs.push("try { Object.defineProperty(window, 'sessionStorage', { configurable: true, value: makeMemoryStorage() }); } catch (_) {}");
+    }
+    if (options.caches) {
+      installs.push("try { Object.defineProperty(window, 'caches', { configurable: true, value: undefined }); } catch (_) {}");
+    }
+    return `<script>
+(function() {
+  function makeMemoryStorage() {
+    const values = new Map();
+    const methods = {
+      clear: function() { values.clear(); },
+      getItem: function(key) {
+        key = String(key);
+        return values.has(key) ? values.get(key) : null;
+      },
+      key: function(index) { return Array.from(values.keys())[Number(index)] ?? null; },
+      removeItem: function(key) { values.delete(String(key)); },
+      setItem: function(key, value) { values.set(String(key), String(value)); }
+    };
+    return new Proxy(Object.create(null), {
+      get: function(target, key, receiver) {
+        if (key === 'length') return values.size;
+        if (Object.prototype.hasOwnProperty.call(methods, key)) return methods[key];
+        if (typeof key === 'string' && values.has(key)) return values.get(key);
+        return Reflect.get(target, key, receiver);
+      },
+      set: function(_target, key, value) {
+        if (typeof key !== 'string') return false;
+        values.set(key, String(value));
+        return true;
+      },
+      ownKeys: function() { return Array.from(values.keys()); },
+      getOwnPropertyDescriptor: function(_target, key) {
+        if (typeof key !== 'string' || !values.has(key)) return undefined;
+        return { configurable: true, enumerable: true, writable: true, value: values.get(key) };
+      },
+      deleteProperty: function(_target, key) { return values.delete(String(key)); }
+    });
+  }
+  ${installs.join('\n  ')}
+})();
+</scr` + `ipt>`;
+  }
+
+  function addMemoryStorageShim(html, gameId) {
+    const shim = memoryStorageShimForGame(gameId);
+    const headPattern = /<head\b[^>]*>/i;
+    if (!shim || !headPattern.test(html)) return html;
+    return html.replace(headPattern, match => `${match}${shim}`);
+  }
+
+  function prepareGameSeven(html) {
+    // These are absent host-page measurement callbacks, not game APIs. The
+    // zipped GameSnacks helpers also expect a loading-logo node that the
+    // standalone wrapper never included.
+    const apiShim = `<script>
+(function() {
+  const gadgetsRef = window.gadgets = window.gadgets || {};
+  gadgetsRef.util = gadgetsRef.util || {};
+  if (typeof gadgetsRef.util.runOnLoadHandlers !== 'function') gadgetsRef.util.runOnLoadHandlers = function() {};
+  const googleRef = window.google = window.google || {};
+  googleRef.csi = googleRef.csi || {};
+  if (typeof googleRef.csi.tickDl !== 'function') googleRef.csi.tickDl = function() {};
+
+  const originalGetElementById = document.getElementById.bind(document);
+  const loadingLogoFallback = { style: {}, parentNode: { removeChild: function() {} } };
+  document.getElementById = function(id) {
+    return originalGetElementById(id)
+      || (id === 'img_loadinglogoicon' ? loadingLogoFallback : null);
+  };
+})();
+</scr` + `ipt>`;
+    const headPattern = /<head\b[^>]*>/i;
+    if (headPattern.test(html)) {
+      html = html.replace(headPattern, match => `${match}${apiShim}`);
+    } else {
+      // Tiny Fishing is a fragment with a stray </head>, not a complete HTML
+      // document. Put the stub before that fragment's first executable game code.
+      const headEndPattern = /<\/head\s*>/i;
+      const bodyStartPattern = /<body\b[^>]*>/i;
+      if (headEndPattern.test(html)) html = html.replace(headEndPattern, match => `${apiShim}${match}`);
+      else if (bodyStartPattern.test(html)) html = html.replace(bodyStartPattern, match => `${apiShim}${match}`);
+      else html = `<meta charset="utf-8">${apiShim}${html}`;
+    }
+    const bodyPattern = /<body\b[^>]*>/i;
+    const placeholder = '<div id="img_loadinglogoicon" aria-hidden="true" style="display:none"></div>';
+    if (!/\bid=["']img_loadinglogoicon["']/i.test(html) && bodyPattern.test(html)) {
+      html = html.replace(bodyPattern, match => `${match}${placeholder}`);
+    } else if (!/\bid=["']img_loadinglogoicon["']/i.test(html)) {
+      html = `${placeholder}${html}`;
+    }
+
+    // The source's startup script may remove/rebuild the initial body before
+    // loading the bundled helper, so ensure its optional logo node exists at
+    // the exact point the helper script is appended.
+    const loadScriptPattern = /function loadScript\(url\)\s*\{/;
+    if (loadScriptPattern.test(html)) {
+      html = html.replace(loadScriptPattern, match => `${match}
+    if (String(url).endsWith('yph_djl.js') && !document.getElementById('img_loadinglogoicon')) {
+      const loadingLogoPlaceholder = document.createElement('div');
+      loadingLogoPlaceholder.id = 'img_loadinglogoicon';
+      loadingLogoPlaceholder.style.display = 'none';
+      (document.body || document.documentElement).appendChild(loadingLogoPlaceholder);
+    }`);
+    }
+    return html;
+  }
+
+  function prepareGameEight(html) {
+    // Ads are unavailable in this sandbox. Resolve only the startup interstitial
+    // so Drive Mad can continue into startGame(); later ad calls reuse the same
+    // benign promise-returning fallback.
+    const startupBreak = /(PokiSDK\.gameLoadingFinished\(\);\s*console\.log\("Starting game"\);\s*)PokiSDK\.commercialBreak\(\)\.then\(\(\) => \{/;
+    return html.replace(startupBreak, '$1if (typeof PokiSDK.commercialBreak !== "function") { PokiSDK.commercialBreak = function() { return Promise.resolve(); }; }\n    PokiSDK.commercialBreak().then(() => {');
+  }
+
+  function stripCloudflareScripts(html) {
+    // These challenge probes and the analytics beacon are host-page extras,
+    // not game assets. Remove only script tags with known Cloudflare markers.
+    return html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, script =>
+      /__CF\$cv\$params|\/cdn-cgi\/challenge-platform\/scripts\/jsd\/main\.js|static\.cloudflareinsights\.com\/beacon\.min\.js/i.test(script) ? '' : script
+    );
+  }
+
+  function prepareGameEleven(html) {
+    return stripCloudflareScripts(html);
+  }
+
+  async function readHTMLBlob(response, signal, bufferMode) {
+    const announcedBytes = Number(response.headers.get('content-length')) || 0;
+    const announcedLarge = announcedBytes > MAX_BUFFER_BYTES;
+
+    if (bufferMode === 'small' && announcedLarge) {
+      throw new Error(`Game ${getGameId()} is ${formatMiB(announcedBytes)}. ${largeGameHint(getGameId())}`);
+    }
+
+    // Large mode, and auto mode when Content-Length already proves the source
+    // is large, let the browser keep the response in Blob storage.
+    if (bufferMode === 'large' || (bufferMode === 'auto' && announcedLarge)) {
+      const blob = await response.blob();
+      if (signal.aborted) throw new DOMException('Loading timed out or was cancelled.', 'AbortError');
+      return blob;
+    }
+
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      if (bufferMode === 'auto') {
+        const blob = await response.blob();
+        if (signal.aborted) throw new DOMException('Loading timed out or was cancelled.', 'AbortError');
+        return blob;
+      }
+      throw new Error('This browser cannot stream-read the response needed for a size check.');
+    }
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    let receivedBytes = 0;
+    try {
+      while (true) {
+        if (signal.aborted) throw new DOMException('Loading timed out or was cancelled.', 'AbortError');
+        const part = await reader.read();
+        if (part.done) break;
+        receivedBytes += part.value.byteLength;
+        if (receivedBytes > MAX_BUFFER_BYTES && bufferMode === 'small') {
+          await reader.cancel();
+          throw new Error(`Game ${getGameId()} exceeded 32 MiB. ${largeGameHint(getGameId())}`);
+        }
+        // If auto discovers that an absent/inaccurate Content-Length hid a
+        // large source, continue and let the selected game use large buffering.
+        chunks.push(part.value);
+      }
+      return new Blob(chunks, { type: 'text/html;charset=utf-8' });
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  function superMarioConstructWorkerShim() {
+    return `<script>
+(function() {
+  const NativeWorker = window.Worker;
+  if (!NativeWorker) return;
+  function resolveEmbeddedWorker(value) {
+    try {
+      const raw = value && typeof value === 'object' && 'url' in value ? value.url : String(value || '');
+      const url = new URL(raw, document.baseURI);
+      const root = new URL('file:///__pm_smc__/');
+      if (url.protocol !== 'file:' || !url.pathname.startsWith(root.pathname)) return null;
+      const path = decodeURIComponent(url.pathname.slice(root.pathname.length));
+      const blob = typeof window.__SMCMakeBlob === 'function'
+        ? window.__SMCMakeBlob(path)
+        : window.c3_base64files && window.c3_base64files[path];
+      return blob && !blob.__smcLazy ? blob : null;
+    } catch (_) { return null; }
+  }
+  function SMCWorker(url, options) {
+    const blob = resolveEmbeddedWorker(url);
+    return new NativeWorker(blob ? URL.createObjectURL(blob) : url, options);
+  }
+  SMCWorker.prototype = NativeWorker.prototype;
+  try { Object.setPrototypeOf(SMCWorker, NativeWorker); } catch (_) {}
+  window.Worker = SMCWorker;
+})();
+</scr` + `ipt>`;
+  }
+
+  async function prepareLargeGameBlob(sourceBlob, baseURL, gameId, game) {
+    const policy = gamePolicyFor(game);
+    const path = String(game && game.path || '').split('/').pop().toLowerCase();
+    if (policy.rollingSky) {
+      const tail = await sourceBlob.slice(Math.max(0, sourceBlob.size - 64 * 1024)).text();
+      if (!/<\/html\s*>/i.test(tail)) {
+        throw new Error('Rolling Sky source is incomplete: the repository HTML is missing its closing </html> tag and game bootstrap. Replace it with a complete export before loading.');
+      }
+    }
+
+    const scanBytes = Math.min(sourceBlob.size, 1024 * 1024);
+    const prefixText = await sourceBlob.slice(0, scanBytes).text();
+    const headPattern = /<head\b[^>]*>/i;
+    const head = headPattern.exec(prefixText);
+    if (!head) throw new Error(`Game ${gameId} did not contain a readable <head> tag.`);
+
+    const encoder = new TextEncoder();
+    const afterHead = encoder.encode(prefixText.slice(0, head.index + head[0].length)).byteLength;
+    const isSMC = policy.superMarioConstruct || path === 'super-mario-construct.html';
+    const fileBase = isSMC ? 'file:///__pm_smc__/' : baseURL;
+    const baseTag = `<base href="${escapeAttribute(fileBase)}">`;
+    const storageShim = memoryStorageShimForGame(gameId);
+    const constructShim = isSMC ? superMarioConstructWorkerShim() : '';
+    const gameFourCSS = path === 'mausland-sharks.html' ? `<style>
+html,body{width:100%;height:100%;margin:0;overflow:hidden}
+#pmmenu{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:5!important;background:#000}
+#pmmenu #app{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}
+.sc-root{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important}
+.sc-layers,.sc-canvas{width:100%!important;height:100%!important}
+</style>` : '';
+    const injections = [baseTag, storageShim, constructShim].join('');
+
+    const tailSize = Math.min(sourceBlob.size, 128 * 1024);
+    let tailStart = sourceBlob.size - tailSize;
+    if (tailStart > 0) {
+      const boundary = new Uint8Array(await sourceBlob.slice(tailStart, tailStart + 4).arrayBuffer());
+      let skip = 0;
+      while (skip < boundary.length && (boundary[skip] & 0xc0) === 0x80) skip++;
+      tailStart += skip;
+    }
+    const tailText = await sourceBlob.slice(tailStart).text();
+    const cleanTail = stripCloudflareScripts(tailText);
+    const tailBlob = cleanTail === tailText
+      ? sourceBlob.slice(tailStart)
+      : new Blob([cleanTail], { type: 'text/html;charset=utf-8' });
+
+    if (!gameFourCSS) {
+      return new Blob([sourceBlob.slice(0, afterHead), injections, sourceBlob.slice(afterHead, tailStart), tailBlob], {
+        type: 'text/html;charset=utf-8'
+      });
+    }
+
+    const headEndPattern = /<\/head\s*>/i;
+    const headEnd = headEndPattern.exec(prefixText);
+    if (!headEnd) {
+      return new Blob([sourceBlob.slice(0, afterHead), injections, gameFourCSS, sourceBlob.slice(afterHead, tailStart), tailBlob], {
+        type: 'text/html;charset=utf-8'
+      });
+    }
+    const beforeHeadEnd = encoder.encode(prefixText.slice(0, headEnd.index)).byteLength;
+    return new Blob([
+      sourceBlob.slice(0, afterHead),
+      baseTag,
+      sourceBlob.slice(afterHead, beforeHeadEnd),
+      storageShim,
+      constructShim,
+      gameFourCSS,
+      sourceBlob.slice(beforeHeadEnd, tailStart),
+      tailBlob
+    ], { type: 'text/html;charset=utf-8' });
+  }
+  async function readHTML(response, signal, bufferMode) {
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      throw new Error('This browser cannot stream-read the response needed for a size check.');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    const chunks = [];
+    const announcedBytes = Number(response.headers.get('content-length')) || 0;
+    let receivedBytes = 0;
+
+    if (announcedBytes > MAX_BUFFER_BYTES && bufferMode === 'small') {
+      await reader.cancel();
+      throw new Error(`Game ${getGameId()} is ${formatMiB(announcedBytes)}. ${largeGameHint(getGameId())}`);
+    }
+
+    try {
+      while (true) {
+        if (signal.aborted) throw new DOMException('Loading timed out or was cancelled.', 'AbortError');
+        const part = await reader.read();
+        if (part.done) break;
+        receivedBytes += part.value.byteLength;
+        if (receivedBytes > MAX_BUFFER_BYTES && bufferMode === 'small') {
+          await reader.cancel();
+          throw new Error(`Game ${getGameId()} exceeded 32 MiB. ${largeGameHint(getGameId())}`);
+        }
+        chunks.push(decoder.decode(part.value, { stream: true }));
+      }
+      chunks.push(decoder.decode());
+      return chunks.join('');
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  async function loadZipGame(gameId, game, response, bufferMode) {
+    const archiveBlob = await readHTMLBlob(response, activeController.signal, bufferMode);
+    const archive = await parseZipArchive(archiveBlob);
+    if (bufferMode === 'small' && archive.totalUncompressedBytes > MAX_BUFFER_BYTES) {
+      throw new Error(`ZIP expands to ${formatMiB(archive.totalUncompressedBytes)}, over the 32 MiB small-buffer limit. ${largeGameHint(gameId)}`);
+    }
+    const entryPath = selectZipHTML(archive.entries);
+    if (!archive.entries.has(entryPath)) throw new Error('ZIP entry HTML could not be selected.');
+
+    notice.hidden = false;
+    notice.textContent = `Unpacking ${game.name}: 0/${archive.entries.size} files…`;
+    const files = [];
+    let completed = 0;
+    for (const entry of archive.entries.values()) {
+      if (activeController.signal.aborted) throw new DOMException('Loading timed out or was cancelled.', 'AbortError');
+      const blob = await extractZipEntryBlob(archiveBlob, entry, activeController.signal);
+      files.push([entry.path, blob]);
+      completed++;
+      if (completed === archive.entries.size || completed % 8 === 0) {
+        notice.textContent = `Unpacking ${game.name}: ${completed}/${archive.entries.size} files (${formatMiB(archive.totalUncompressedBytes)} expanded)…`;
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+
+    const token = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    activeZipSession = {
+      token,
+      gameId,
+      gameName: game.name,
+      entryPath,
+      files,
+      sent: false,
+      timer: setTimeout(() => {
+        if (activeZipSession && activeZipSession.token === token) {
+          activeZipSession = null;
+          fail(`ZIP game ${gameId} timed out while preparing its entry page.`);
+        }
+      }, 5 * 60 * 1000)
+    };
+    notice.hidden = true;
+    gameFrame.srcdoc = makeZipBootstrapDocument(token, game.name);
+    document.title = `${game.name} — Loading`;
+  }
+
+  async function loadGame(gameId, game) {
+    notice.hidden = true;
+    if (activeZipSession && activeZipSession.timer) clearTimeout(activeZipSession.timer);
+    activeZipSession = null;
+    const bufferMode = getBufferMode();
+    const policy = gamePolicyFor(game);
+    activeController = new AbortController();
+    loadTimer = setTimeout(() => activeController && activeController.abort(), 5 * 60 * 1000);
+    try {
+      const response = await fetch(game.url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'follow',
+        signal: activeController.signal
+      });
+      if (!response.ok) throw new Error(`Source returned HTTP ${response.status}.`);
+      const finalURL = response.url ? new URL(response.url) : new URL(game.url);
+      const sourceBaseURL = new URL('.', finalURL.href).href;
+      const gameType = game.type || (/\.zip$/i.test(String(game.path || game.url)) ? 'zip' : 'html');
+      if (gameType === 'zip') {
+        await loadZipGame(gameId, game, response, bufferMode);
+        return;
+      }
+
+      const textPreparation = ['1', '3', '7', '8', '11'].includes(gameId);
+      let sourceHTML = null;
+      if (textPreparation && !policy.blobBacked) {
+        sourceHTML = await readHTML(response, activeController.signal, bufferMode);
+      } else {
+        const sourceBlob = await readHTMLBlob(response, activeController.signal, bufferMode);
+        if (policy.blobBacked || sourceBlob.size > MAX_BUFFER_BYTES) {
+          const preparedBlob = await prepareLargeGameBlob(sourceBlob, sourceBaseURL, gameId, game);
+          if (activeBlobURL) URL.revokeObjectURL(activeBlobURL);
+          activeBlobURL = URL.createObjectURL(preparedBlob);
+          gameFrame.src = activeBlobURL;
+          document.title = `${game.name} — Game`;
+          return;
+        }
+        sourceHTML = await sourceBlob.text();
+      }
+
+      const preparedSource = gameId === '1'
+        ? prepareGameOneWrapper(sourceHTML)
+        : gameId === '3' ? prepareGameThreeUnity(sourceHTML)
+          : gameId === '7' ? prepareGameSeven(sourceHTML)
+            : gameId === '8' ? prepareGameEight(sourceHTML) : sourceHTML;
+      const cleanedSource = stripCloudflareScripts(preparedSource);
+      const unwrappedHTML = gameId === '1' ? null : extractCDATAHTMLFromScriptWrapper(cleanedSource);
+      const baseHTML = addBaseForNormalHTML(unwrappedHTML || cleanedSource, sourceBaseURL);
+      const cookieHTML = addMemoryCookieShim(baseHTML, gameId);
+      const html = addMemoryStorageShim(cookieHTML, gameId);
+      gameFrame.srcdoc = html;
+      document.title = `${game.name} — Game`;
+    } catch (error) {
+      const message = error && error.name === 'AbortError'
+        ? 'Loading timed out or was cancelled.'
+        : (error && error.message ? error.message : String(error));
+      fail(`Game ${gameId} could not be loaded.\n${message}`);
+    } finally {
+      if (loadTimer) clearTimeout(loadTimer);
+      loadTimer = null;
+      activeController = null;
+    }
+  }
+
+  window.addEventListener('message', event => {
+    const session = activeZipSession;
+    const data = event.data;
+    if (!session || event.source !== gameFrame.contentWindow || !data || data.token !== session.token) return;
+    if (data.type === 'pmzip-ready' && !session.sent) {
+      session.sent = true;
+      try {
+        event.source.postMessage({
+          type: 'pmzip-init',
+          token: session.token,
+          entryPath: session.entryPath,
+          files: session.files
+        }, '*');
+        session.files = null;
+      } catch (error) {
+        if (session.timer) clearTimeout(session.timer);
+        activeZipSession = null;
+        fail(`ZIP game ${session.gameId} could not pass its assets to the sandbox.\n${error && error.message ? error.message : error}`);
+      }
+    } else if (data.type === 'pmzip-error') {
+      if (session.timer) clearTimeout(session.timer);
+      activeZipSession = null;
+      fail(`ZIP game ${session.gameId} could not be loaded.\n${data.message || 'The archive bootstrap failed.'}`);
+    } else if (data.type === 'pmzip-started') {
+      if (session.timer) clearTimeout(session.timer);
+      activeZipSession = null;
+      notice.hidden = true;
+      document.title = `${session.gameName} — Game`;
+    }
+  });
+  window.addEventListener('pagehide', () => {
+    if (activeController) activeController.abort();
+    if (activeZipSession && activeZipSession.timer) clearTimeout(activeZipSession.timer);
+    activeZipSession = null;
+    if (activeBlobURL) {
+      URL.revokeObjectURL(activeBlobURL);
+      activeBlobURL = null;
+    }
+  });
+
+  async function initializeLoader() {
+    const gameId = getGameId();
+    if (!gameId) {
+      fail('Checking the repository game catalog…');
+      const refreshed = await refreshGameCatalog();
+      const message = formatSelectionMessage(GAMES);
+      fail(refreshed ? message : `${message}\nRepository catalog could not be refreshed; using the built-in list.`);
+      return;
+    }
+
+    // The established IDs load immediately, preserving their existing behavior.
+    // Only an empty or not-yet-known selection needs the live repository listing.
+    if (GAMES[gameId]) {
+      loadGame(gameId, GAMES[gameId]);
+      return;
+    }
+
+    fail('Checking the repository game catalog…');
+    const refreshed = await refreshGameCatalog();
+    if (GAMES[gameId]) {
+      loadGame(gameId, GAMES[gameId]);
+      return;
+    }
+    const suffix = refreshed ? '' : '\nRepository catalog could not be refreshed; using the built-in list.';
+    fail(`Game ${gameId} is not configured. ${formatAvailableIdsMessage(GAMES)}${suffix}`);
+  }
+
+  initializeLoader();
+})();
+</script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a5fadb4ff9596873',t:'MTc5NTU0ODkyNQ=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a5fadb4ff9596873',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
