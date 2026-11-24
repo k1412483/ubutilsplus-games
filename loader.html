@@ -1266,6 +1266,18 @@
       });
   }
 
+  function guardGetYokedAudioWorklet(html) {
+    // The embedded FMOD framework checks AudioWorkletNode but then assumes
+    // AudioContext.audioWorklet exists. In some sandboxed contexts it doesn't.
+    // Patch only the small unpacked framework, not the encoded game payload.
+    const blobPrefix = "const frameworkBlob=new Blob([files['Build/Web.framework.js']]";
+    const guardedBlobPrefix = `const frameworkText=new TextDecoder().decode(files['Build/Web.framework.js'])
+        .replace('if(contextForCheck.audioWorklet.addModule)', 'if(contextForCheck.audioWorklet&&contextForCheck.audioWorklet.addModule)')
+        .replace('if(!Module.mContext.audioWorklet.addModule)', 'if(!Module.mContext.audioWorklet||!Module.mContext.audioWorklet.addModule)');
+      const frameworkBlob=new Blob([frameworkText]`;
+    return html.replace(blobPrefix, guardedBlobPrefix);
+  }
+
   async function prepareLargeGameBlob(sourceBlob, baseURL, gameId, game) {
     const policy = gamePolicyFor(game);
     const path = String(game && game.path || '').split('/').pop().toLowerCase();
@@ -1307,7 +1319,8 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden}
       tailStart += skip;
     }
     const tailText = await sourceBlob.slice(tailStart).text();
-    const cleanTail = normalizeStreamingAssetsURLs(stripCloudflareScripts(tailText), fileBase);
+    let cleanTail = normalizeStreamingAssetsURLs(stripCloudflareScripts(tailText), fileBase);
+    if (path === 'get-yoked.html') cleanTail = guardGetYokedAudioWorklet(cleanTail);
     const tailBlob = cleanTail === tailText
       ? sourceBlob.slice(tailStart)
       : new Blob([cleanTail], { type: 'text/html;charset=utf-8' });
