@@ -1224,6 +1224,48 @@
 </scr` + `ipt>`;
   }
 
+  function normalizeStreamingAssetsURLs(html, baseURL) {
+    // Unity may resolve this setting against document.URL instead of baseURI.
+    // Blob documents have an opaque URL, so turn relative JS string literals
+    // into absolute URLs before the game starts. Never evaluate game code.
+    return html.replace(/((?:\bstreamingAssetsUrl|['"]streamingAssetsUrl['"])\s*:\s*)(['"])((?:\\[\s\S]|(?!\2)[^\\\r\n])*)\2/g,
+      (match, property, quote, literal) => {
+        try {
+          let value = '';
+          for (let i = 0; i < literal.length; i++) {
+            if (literal[i] !== '\\') { value += literal[i]; continue; }
+            const escape = literal[++i];
+            const simple = { b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '0': '\0' };
+            if (escape === '\n') continue;
+            if (escape === '\r') { if (literal[i + 1] === '\n') i++; continue; }
+            if (escape === 'x' || escape === 'u') {
+              const rest = literal.slice(i + 1);
+              const hex = escape === 'x' ? /^[\da-f]{2}/i.exec(rest)
+                : /^(?:[\da-f]{4}|\{[\da-f]{1,6}\})/i.exec(rest);
+              if (!hex) return match;
+              value += String.fromCodePoint(parseInt(hex[0].replace(/[{}]/g, ''), 16));
+              i += hex[0].length;
+            } else if (Object.prototype.hasOwnProperty.call(simple, escape)) {
+              if (escape === '0' && /[0-9]/.test(literal[i + 1] || '')) return match;
+              value += simple[escape];
+            } else if (/[1-9]/.test(escape)) {
+              return match; // Do not reinterpret legacy numeric escapes.
+            } else {
+              value += escape;
+            }
+          }
+          try { new URL(value); return match; } catch (_) { /* relative URL */ }
+          const absolute = new URL(value, baseURL);
+          if (!absolute.pathname.endsWith('/')) absolute.pathname += '/';
+          const safeLiteral = JSON.stringify(absolute.href)
+            .replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+          return property + safeLiteral;
+        } catch (_) {
+          return match;
+        }
+      });
+  }
+
   async function prepareLargeGameBlob(sourceBlob, baseURL, gameId, game) {
     const policy = gamePolicyFor(game);
     const path = String(game && game.path || '').split('/').pop().toLowerCase();
@@ -1265,7 +1307,7 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden}
       tailStart += skip;
     }
     const tailText = await sourceBlob.slice(tailStart).text();
-    const cleanTail = stripCloudflareScripts(tailText);
+    const cleanTail = normalizeStreamingAssetsURLs(stripCloudflareScripts(tailText), fileBase);
     const tailBlob = cleanTail === tailText
       ? sourceBlob.slice(tailStart)
       : new Blob([cleanTail], { type: 'text/html;charset=utf-8' });
