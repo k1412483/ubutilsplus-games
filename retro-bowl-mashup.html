@@ -1,0 +1,1778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Retro Bowl Mashup — College × Pro</title>
+<style>
+  /* ============ RETRO BOWL STYLE CORE ============ */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; padding:0; height:100%; background:#0a1428; overflow:hidden; font-family: "Arial Black", "Segoe UI", Arial, sans-serif; }
+  body { color:#fff; user-select:none; }
+  #app { position:relative; width:100vw; height:100vh; max-width:1280px; margin:0 auto; overflow:hidden; background:#0a1428; box-shadow:0 0 60px rgba(0,0,0,.8); }
+  .screen { position:absolute; inset:0; display:none; flex-direction:column; overflow:hidden; }
+  .screen.active { display:flex; }
+  .rb-btn {
+    font-family: inherit; font-weight:900; text-transform:uppercase; letter-spacing:.5px;
+    color:#fff; background:linear-gradient(180deg,#3a9e4f 0%,#2a7a3b 100%);
+    border:3px solid #fff; border-radius:10px; padding:12px 28px; font-size:18px;
+    cursor:pointer; text-shadow:2px 2px 0 rgba(0,0,0,.45); box-shadow:0 4px 0 #14351c, 0 6px 12px rgba(0,0,0,.5);
+    transition:transform .08s, filter .08s;
+  }
+  .rb-btn:hover { filter:brightness(1.15); transform:translateY(-1px); }
+  .rb-btn:active { transform:translateY(2px); box-shadow:0 1px 0 #14351c; }
+  .rb-btn.blue { background:linear-gradient(180deg,#2f6fb2 0%,#1d4e89 100%); box-shadow:0 4px 0 #0e2c4f, 0 6px 12px rgba(0,0,0,.5); }
+  .rb-btn.red { background:linear-gradient(180deg,#c0392b 0%,#922b21 100%); box-shadow:0 4px 0 #4d130d, 0 6px 12px rgba(0,0,0,.5); }
+  .rb-btn.gold { background:linear-gradient(180deg,#f1c40f 0%,#d4a017 100%); color:#1a1a1a; text-shadow:1px 1px 0 rgba(255,255,255,.4); box-shadow:0 4px 0 #7a5c00, 0 6px 12px rgba(0,0,0,.5); }
+  .rb-btn.dark { background:linear-gradient(180deg,#34495e 0%,#1f2f42 100%); box-shadow:0 4px 0 #0d1622, 0 6px 12px rgba(0,0,0,.5); }
+  .rb-btn.small { padding:8px 16px; font-size:13px; border-width:2px; border-radius:8px; }
+  .rb-btn:disabled { opacity:.45; cursor:not-allowed; filter:grayscale(.6); }
+  .rb-panel { background:rgba(10,20,40,.92); border:3px solid #fff; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,.6); }
+  .rb-title-logo {
+    font-size:clamp(38px,7vw,72px); font-weight:900; line-height:.9; text-align:center;
+    color:#fff; text-shadow:4px 4px 0 #1a1a1a, 0 0 30px rgba(241,196,15,.35);
+    letter-spacing:1px; transform:skew(-4deg);
+  }
+  .rb-title-logo .bowl { color:#f1c40f; }
+  .rb-title-logo .college { color:#7ec8ff; font-size:.55em; display:block; letter-spacing:6px; }
+  .rb-title-logo .pro { color:#ff7b7b; font-size:.55em; display:block; letter-spacing:6px; }
+  .topbar {
+    background:linear-gradient(180deg,#0d1b33 0%,#0a1428 100%);
+    border-bottom:3px solid #f1c40f; padding:8px 12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  .topbar .team-badge { width:40px; height:40px; border-radius:50%; border:3px solid #fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:900; color:#fff; text-shadow:1px 1px 0 #000; flex-shrink:0; }
+  .topbar h2 { margin:0; font-size:18px; text-transform:uppercase; letter-spacing:.5px; }
+  .topbar .sub { font-size:12px; opacity:.85; font-family:Arial,sans-serif; font-weight:700; }
+  .scroll-area { flex:1; overflow-y:auto; padding:12px; }
+  .grid-teams { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  .team-card {
+    background:linear-gradient(180deg,#1c2f4d,#101d33); border:2px solid #3a5a8a; border-radius:10px;
+    padding:10px; cursor:pointer; text-align:center; transition:all .12s;
+  }
+  .team-card:hover { border-color:#f1c40f; transform:translateY(-2px); background:linear-gradient(180deg,#243a5e,#15263f); }
+  .team-card.selected { border-color:#f1c40f; background:linear-gradient(180deg,#3a5a2a,#1e3316); box-shadow:0 0 0 2px #f1c40f; }
+  .helmet { width:56px; height:56px; border-radius:50% 50% 50% 50% / 60% 60% 40% 40%; margin:0 auto 6px; border:3px solid #fff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:15px; color:#fff; text-shadow:1px 1px 0 #000; position:relative; }
+  .helmet::after { content:""; position:absolute; bottom:6px; left:50%; transform:translateX(-50%); width:28px; height:4px; background:rgba(255,255,255,.85); border-radius:2px; }
+  .team-card .tname { font-size:13px; line-height:1.1; min-height:28px; display:flex; align-items:center; justify-content:center; }
+  .team-card .tovr { display:inline-block; background:#f1c40f; color:#111; font-size:12px; padding:2px 8px; border-radius:20px; margin-top:4px; }
+  .div-header { grid-column:1/-1; background:#0d1b33; border:2px solid #f1c40f; color:#f1c40f; padding:6px 12px; border-radius:8px; font-size:14px; text-transform:uppercase; margin-top:8px; }
+  table.rb-table { width:100%; border-collapse:collapse; font-family:Arial,sans-serif; font-size:13px; }
+  table.rb-table th { background:#0d1b33; color:#f1c40f; padding:8px 6px; text-align:left; border-bottom:2px solid #f1c40f; }
+  table.rb-table td { padding:6px; border-bottom:1px solid #22365a; }
+  table.rb-table tr.me td { background:rgba(241,196,15,.18); font-weight:900; }
+  .stat-chip { display:inline-block; background:#1c2f4d; border:1px solid #3a5a8a; border-radius:8px; padding:6px 10px; margin:3px; font-family:Arial,sans-serif; font-size:12px; }
+  .stat-chip b { color:#f1c40f; font-size:15px; }
+  .kbd { display:inline-block; background:#111; border:1px solid #666; border-bottom-width:3px; border-radius:6px; padding:2px 8px; font-family:monospace; font-size:12px; }
+  /* Title screen stadium */
+  #screen-title { background: linear-gradient(180deg,#0a1428 0%,#12294d 30%,#1a3a1a 62%,#2a7a3b 100%); }
+  #screen-title .stadium-lights { position:absolute; top:0; left:0; right:0; height:120px; background:radial-gradient(ellipse at 20% 0%, rgba(255,255,255,.35), transparent 60%), radial-gradient(ellipse at 80% 0%, rgba(255,255,255,.35), transparent 60%); pointer-events:none; }
+  #screen-title .crowd { position:absolute; top:90px; left:0; right:0; height:90px; opacity:.5; background-image:radial-gradient(circle, #fff 1.5px, transparent 1.6px), radial-gradient(circle, #f1c40f 1.5px, transparent 1.6px); background-size:22px 22px, 30px 30px; background-position:0 0, 10px 8px; }
+  #screen-title .field-strip { position:absolute; bottom:0; left:0; right:0; height:120px; background:repeating-linear-gradient(90deg,#2a7a3b 0 60px,#25702f 60px 120px); border-top:4px solid #fff; opacity:.9; }
+  #screen-title .field-strip::after { content:"50"; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:60px; font-weight:900; color:rgba(255,255,255,.25); }
+  /* Game canvas */
+  #screen-game { background:#0a1428; }
+  #game-wrap { position:relative; flex:1; display:flex; align-items:center; justify-content:center; background:#000; min-height:0; }
+  #game-canvas { width:100%; height:100%; max-width:1280px; max-height:720px; display:block; image-rendering:auto; background:#2a7a3b; }
+  #hud {
+    background:#000; border-bottom:3px solid #f1c40f; display:flex; align-items:center; gap:8px; padding:6px 10px; flex-wrap:wrap;
+    font-size:13px; text-transform:uppercase;
+  }
+  #hud .score-box { display:flex; align-items:center; gap:6px; background:#1a1a1a; border:2px solid #fff; border-radius:8px; padding:4px 10px; }
+  #hud .score-box .abbr { font-weight:900; }
+  #hud .score-box .pts { background:#fff; color:#000; border-radius:6px; padding:1px 8px; font-weight:900; font-size:16px; }
+  #hud .clock-box { background:#1a1a1a; border:2px solid #f1c40f; border-radius:8px; padding:4px 10px; font-weight:900; }
+  #hud .down-box { background:#1a1a1a; border:2px solid #7ec8ff; border-radius:8px; padding:4px 10px; font-family:Arial,sans-serif; font-weight:700; font-size:12px; }
+  #play-msg { position:absolute; left:50%; top:18%; transform:translateX(-50%); background:rgba(0,0,0,.85); border:3px solid #f1c40f; border-radius:12px; padding:12px 22px; font-size:20px; text-align:center; display:none; z-index:20; max-width:90%; }
+  #play-msg small { display:block; font-family:Arial,sans-serif; font-size:13px; opacity:.9; margin-top:4px; }
+  .overlay-panel { position:absolute; inset:0; background:rgba(5,10,25,.88); display:none; align-items:center; justify-content:center; z-index:30; padding:16px; }
+  .overlay-panel.show { display:flex; }
+  .overlay-card { max-width:640px; width:100%; max-height:90%; overflow-y:auto; padding:20px; text-align:center; }
+  .overlay-card h2 { margin:0 0 8px; text-transform:uppercase; color:#f1c40f; }
+  .overlay-card p { font-family:Arial,sans-serif; font-size:14px; line-height:1.5; }
+  .btn-row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:12px; }
+  .playcall { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:8px 0; }
+  .playcall button { font-family:inherit; font-weight:900; font-size:13px; padding:10px 14px; border-radius:10px; border:3px solid #fff; cursor:pointer; color:#fff; }
+  .playcall button.sel { outline:3px solid #f1c40f; }
+  /* FG meter */
+  #fg-meter-wrap { width:100%; height:26px; background:#111; border:3px solid #fff; border-radius:8px; position:relative; overflow:hidden; margin:12px 0; }
+  #fg-meter-zone { position:absolute; top:0; bottom:0; background:rgba(58,158,79,.7); border-left:3px solid #f1c40f; border-right:3px solid #f1c40f; }
+  #fg-meter-needle { position:absolute; top:-4px; bottom:-4px; width:6px; background:#f1c40f; border:1px solid #000; }
+  /* Touch controls */
+  #touch-controls { display:none; position:absolute; bottom:10px; left:0; right:0; justify-content:space-between; padding:0 12px; z-index:15; pointer-events:none; }
+  #touch-controls.show { display:flex; }
+  .touch-dpad { display:grid; grid-template-columns:44px 44px 44px; grid-template-rows:44px 44px 44px; gap:2px; pointer-events:auto; }
+  .touch-dpad button, .touch-actions button { background:rgba(255,255,255,.22); border:2px solid #fff; color:#fff; border-radius:10px; font-size:18px; font-weight:900; }
+  .touch-actions { display:flex; flex-direction:column; gap:8px; pointer-events:auto; }
+  .touch-actions button { width:72px; height:56px; font-size:13px; }
+  .toast { position:absolute; left:50%; bottom:70px; transform:translateX(-50%); background:#000; border:2px solid #f1c40f; padding:8px 16px; border-radius:8px; font-family:Arial,sans-serif; font-size:13px; display:none; z-index:40; }
+  .toast.show { display:block; }
+  .roster-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:8px; }
+  .player-card { background:#15263f; border:2px solid #3a5a8a; border-radius:10px; padding:8px; text-align:left; font-family:Arial,sans-serif; font-size:12px; }
+  .player-card .pname { font-family:inherit; font-weight:900; font-size:13px; }
+  .player-card .prating { float:right; background:#f1c40f; color:#000; border-radius:12px; padding:1px 8px; font-weight:900; }
+  .recruit-card { background:#15263f; border:2px solid #3a5a8a; border-radius:10px; padding:10px; text-align:left; font-family:Arial,sans-serif; font-size:13px; cursor:pointer; }
+  .recruit-card:hover { border-color:#f1c40f; }
+  .recruit-card.picked { border-color:#3a9e4f; background:#1e3316; }
+  .bracket { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .bracket-col { min-width:160px; }
+  .bracket-col h4 { color:#f1c40f; margin:6px 0; text-transform:uppercase; font-size:13px; }
+  .bracket-match { background:#15263f; border:2px solid #3a5a8a; border-radius:8px; padding:6px; margin:6px 0; font-family:Arial,sans-serif; font-size:12px; }
+  .bracket-match.winner { border-color:#f1c40f; }
+  @media (max-width:700px) {
+    .rb-btn { font-size:15px; padding:10px 18px; }
+    #hud { font-size:11px; }
+    .grid-teams { grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ================= TITLE / MAIN MENU (Retro Bowl style) ================= -->
+  <div id="screen-title" class="screen active">
+    <div class="stadium-lights"></div>
+    <div class="crowd"></div>
+    <div class="field-strip"></div>
+    <div style="position:relative; z-index:2; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; gap:14px;">
+      <div class="rb-title-logo">RETRO <span class="bowl">BOWL</span><span class="college">★ COLLEGE ★</span><span class="pro">× PRO MASHUP ★</span></div>
+      <div style="font-family:Arial,sans-serif; font-size:13px; background:rgba(0,0,0,.6); border:2px solid #f1c40f; border-radius:20px; padding:6px 16px;">
+        🏈 One game. Two worlds. Recruit in college. Go pro. Win it all. 🏆
+      </div>
+      <div style="display:flex; flex-direction:column; gap:10px; width:min(420px,92vw);">
+        <button class="rb-btn gold" id="btn-continue" style="display:none;">▶ Continue Career</button>
+        <button class="rb-btn" id="btn-play-college">🎓 Play College</button>
+        <button class="rb-btn red" id="btn-play-pro">🏈 Play Pro (NFL)</button>
+        <button class="rb-btn blue" id="btn-play-mashup">🔀 Mashup Career: College → Pro</button>
+        <div style="display:flex; gap:10px;">
+          <button class="rb-btn dark small" id="btn-howto" style="flex:1;">How to Play</button>
+          <button class="rb-btn dark small" id="btn-options" style="flex:1;">Options</button>
+        </div>
+      </div>
+      <div id="title-save-info" style="font-family:Arial,sans-serif; font-size:12px; opacity:.9; text-align:center;"></div>
+      <div style="font-family:Arial,sans-serif; font-size:11px; opacity:.7;">Fan-made mashup inspired by Retro Bowl &amp; Retro Bowl College. Not affiliated with New Star Games.</div>
+    </div>
+  </div>
+
+  <!-- ================= TEAM SELECT ================= -->
+  <div id="screen-team" class="screen">
+    <div class="topbar">
+      <button class="rb-btn dark small" id="btn-team-back">← Back</button>
+      <div>
+        <h2 id="team-select-title">Select Your Team</h2>
+        <div class="sub" id="team-select-sub">Tap a team to coach it. OVR = overall rating.</div>
+      </div>
+      <div style="margin-left:auto; display:flex; gap:8px;">
+        <button class="rb-btn small" id="btn-random-team">🎲 Random</button>
+        <button class="rb-btn gold small" id="btn-start-season" disabled>▶ Start Season</button>
+      </div>
+    </div>
+    <div class="scroll-area">
+      <div id="team-grid" class="grid-teams"></div>
+    </div>
+  </div>
+
+  <!-- ================= HUB / LOCKER ROOM ================= -->
+  <div id="screen-hub" class="screen">
+    <div class="topbar">
+      <div class="team-badge" id="hub-badge">RB</div>
+      <div>
+        <h2 id="hub-team-name">Your Team</h2>
+        <div class="sub" id="hub-meta">Week 1 • 0-0</div>
+      </div>
+      <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="rb-btn small" id="btn-hub-roster">👥 Roster</button>
+        <button class="rb-btn small" id="btn-hub-standings">📊 Standings</button>
+        <button class="rb-btn small" id="btn-hub-recruit" style="display:none;">⭐ Recruit</button>
+        <button class="rb-btn small" id="btn-hub-draft" style="display:none;">📋 Draft Board</button>
+        <button class="rb-btn dark small" id="btn-hub-menu">Menu</button>
+      </div>
+    </div>
+    <div class="scroll-area">
+      <div class="rb-panel" style="padding:16px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div style="color:#f1c40f; font-size:13px; text-transform:uppercase;">Next Game — <span id="hub-week-label">Week 1</span></div>
+            <div id="hub-matchup" style="font-size:20px; margin:4px 0;">You vs Opponent</div>
+            <div id="hub-matchup-sub" style="font-family:Arial,sans-serif; font-size:13px; opacity:.9;"></div>
+          </div>
+          <button class="rb-btn" id="btn-play-game" style="font-size:22px; padding:16px 36px;">▶ PLAY GAME</button>
+        </div>
+        <div id="hub-stats" style="margin-top:10px;"></div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px;">
+        <div class="rb-panel" style="padding:12px;">
+          <h3 style="margin:0 0 8px; color:#f1c40f; text-transform:uppercase; font-size:14px;">📅 Schedule</h3>
+          <div id="hub-schedule" style="font-family:Arial,sans-serif; font-size:13px;"></div>
+        </div>
+        <div class="rb-panel" style="padding:12px;">
+          <h3 style="margin:0 0 8px; color:#f1c40f; text-transform:uppercase; font-size:14px;">🏆 Top 5 — <span id="hub-top-title">Standings</span></h3>
+          <div id="hub-top5" style="font-family:Arial,sans-serif; font-size:13px;"></div>
+        </div>
+        <div class="rb-panel" style="padding:12px;">
+          <h3 style="margin:0 0 8px; color:#f1c40f; text-transform:uppercase; font-size:14px;">⭐ Star Players</h3>
+          <div id="hub-stars" style="font-family:Arial,sans-serif; font-size:13px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= ROSTER ================= -->
+  <div id="screen-roster" class="screen">
+    <div class="topbar">
+      <button class="rb-btn dark small" id="btn-roster-back">← Back</button>
+      <div><h2>👥 Roster</h2><div class="sub" id="roster-sub"></div></div>
+    </div>
+    <div class="scroll-area"><div id="roster-grid" class="roster-grid"></div></div>
+  </div>
+
+  <!-- ================= STANDINGS ================= -->
+  <div id="screen-standings" class="screen">
+    <div class="topbar">
+      <button class="rb-btn dark small" id="btn-standings-back">← Back</button>
+      <div><h2>📊 Standings</h2><div class="sub" id="standings-sub"></div></div>
+    </div>
+    <div class="scroll-area"><div id="standings-wrap"></div></div>
+  </div>
+
+  <!-- ================= RECRUITING (College) ================= -->
+  <div id="screen-recruit" class="screen">
+    <div class="topbar">
+      <button class="rb-btn dark small" id="btn-recruit-back">← Back</button>
+      <div><h2>⭐ Recruiting</h2><div class="sub">Pick your recruits. They join your roster immediately. <span id="recruit-picks-left"></span></div></div>
+      <button class="rb-btn gold small" id="btn-recruit-done" style="margin-left:auto;">✓ Done</button>
+    </div>
+    <div class="scroll-area"><div id="recruit-grid" class="roster-grid"></div></div>
+  </div>
+
+  <!-- ================= DRAFT BOARD ================= -->
+  <div id="screen-draft" class="screen">
+    <div class="topbar">
+      <button class="rb-btn dark small" id="btn-draft-back">← Back</button>
+      <div><h2>📋 Draft Board</h2><div class="sub" id="draft-sub">Top prospects.</div></div>
+    </div>
+    <div class="scroll-area"><div id="draft-wrap"></div></div>
+  </div>
+
+  <!-- ================= GAME ================= -->
+  <div id="screen-game" class="screen">
+    <div id="hud">
+      <div class="score-box"><span class="abbr" id="hud-home-abbr">HOME</span><span class="pts" id="hud-home-score">0</span></div>
+      <div class="score-box"><span class="abbr" id="hud-away-abbr">AWAY</span><span class="pts" id="hud-away-score">0</span></div>
+      <div class="clock-box" id="hud-clock">Q1 2:00</div>
+      <div class="down-box" id="hud-down">1st &amp; 10 • Ball on 25</div>
+      <div class="down-box" id="hud-timeouts">TO: 3-3</div>
+      <div style="margin-left:auto; display:flex; gap:6px;">
+        <button class="rb-btn dark small" id="btn-pause">⏸ Pause</button>
+        <button class="rb-btn dark small" id="btn-quit-game">Quit</button>
+      </div>
+    </div>
+    <div id="game-wrap">
+      <canvas id="game-canvas" width="960" height="540"></canvas>
+      <div id="play-msg"></div>
+      <div id="touch-controls">
+        <div class="touch-dpad">
+          <span></span><button data-k="up">▲</button><span></span>
+          <button data-k="left">◀</button><button data-k="down">▼</button><button data-k="right">▶</button>
+          <span></span><span></span><span></span>
+        </div>
+        <div class="touch-actions">
+          <button id="touch-throw">THROW /<br>TACKLE</button>
+          <button id="touch-snap">SNAP /<br>SELECT</button>
+        </div>
+      </div>
+      <div class="toast" id="toast"></div>
+
+      <!-- Pause -->
+      <div class="overlay-panel" id="overlay-pause">
+        <div class="rb-panel overlay-card">
+          <h2>⏸ Paused</h2>
+          <p id="pause-score-line"></p>
+          <div class="btn-row">
+            <button class="rb-btn" id="btn-resume">Resume</button>
+            <button class="rb-btn blue" id="btn-restart">Restart Game</button>
+            <button class="rb-btn dark" id="btn-quit-to-hub">Quit to Hub</button>
+          </div>
+          <p style="font-size:12px; opacity:.8;">Controls: <span class="kbd">←↑↓→</span>/<span class="kbd">WASD</span> move • <span class="kbd">Space</span> throw/tackle • <span class="kbd">Enter</span> snap • <span class="kbd">1/2/3</span> play • <span class="kbd">P</span> pause</p>
+        </div>
+      </div>
+
+      <!-- Halftime -->
+      <div class="overlay-panel" id="overlay-halftime">
+        <div class="rb-panel overlay-card">
+          <h2>⏱ Halftime</h2>
+          <p id="halftime-line"></p>
+          <div id="halftime-stats" style="text-align:left;"></div>
+          <div class="btn-row"><button class="rb-btn" id="btn-halftime-continue">▶ 2nd Half</button></div>
+        </div>
+      </div>
+
+      <!-- Play call / FG / Kickoff prompt -->
+      <div class="overlay-panel" id="overlay-playcall">
+        <div class="rb-panel overlay-card">
+          <h2 id="playcall-title">Play Call</h2>
+          <p id="playcall-sub"></p>
+          <div class="playcall" id="playcall-btns"></div>
+          <div id="fg-area" style="display:none;">
+            <div id="fg-meter-wrap"><div id="fg-meter-zone"></div><div id="fg-meter-needle"></div></div>
+            <p style="font-size:12px;">Press <span class="kbd">Space</span> when the needle is in the green!</p>
+          </div>
+          <div class="btn-row" id="playcall-actions"></div>
+        </div>
+      </div>
+
+      <!-- Game over -->
+      <div class="overlay-panel" id="overlay-gameover">
+        <div class="rb-panel overlay-card">
+          <h2 id="gameover-title">Final</h2>
+          <p id="gameover-score" style="font-size:22px; font-weight:900;"></p>
+          <div id="gameover-stats" style="text-align:left;"></div>
+          <div class="btn-row"><button class="rb-btn gold" id="btn-gameover-continue">Continue ▶</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= HOW TO PLAY ================= -->
+  <div id="screen-howto" class="screen">
+    <div class="topbar">
+      <button class="rb-btn dark small" id="btn-howto-back">← Back</button>
+      <div><h2>📖 How to Play</h2></div>
+    </div>
+    <div class="scroll-area">
+      <div class="rb-panel" style="padding:18px; font-family:Arial,sans-serif; font-size:14px; line-height:1.6;">
+        <h3 style="color:#f1c40f; margin-top:0;">🎯 Goal</h3>
+        <p>Win your <b>College</b> season, earn a National Championship, get drafted, then win the <b>Pro</b> Super Bowl. Or just play one mode — your call. The Mashup Career links both: your college stars carry into the pros.</p>
+        <h3 style="color:#f1c40f;">🏈 On Offense (you are the QB)</h3>
+        <p><span class="kbd">← ↑ ↓ →</span> or <span class="kbd">WASD</span> — move / scramble &nbsp;•&nbsp; <span class="kbd">Space</span> — throw to the most open receiver &nbsp;•&nbsp; <span class="kbd">Enter</span> — snap the ball &nbsp;•&nbsp; <span class="kbd">1/2/3</span> — pick a play before the snap &nbsp;•&nbsp; After a catch you control the receiver — run for the end zone! Don't cross the line of scrimmage before throwing.</p>
+        <h3 style="color:#f1c40f;">🛡 On Defense</h3>
+        <p>Move your linebacker with <span class="kbd">←↑↓→</span>. <span class="kbd">Space</span> = dive tackle (burst of speed). Chase the ball carrier and make the tackle before the end zone. Pick <span class="kbd">1/2/3</span> for Man / Zone / Blitz before the snap.</p>
+        <h3 style="color:#f1c40f;">📋 Rules (simplified Retro Bowl)</h3>
+        <p>4 downs to gain 10 yards. Score TDs (6 + auto XP), field goals (3), safeties (2). 4th down: punt or try a field goal if close (timing mini-game). Clock runs during plays. Quarters are short — every play matters!</p>
+        <h3 style="color:#f1c40f;">🎓 College extras</h3>
+        <p>Recruit new stars each week, chase the Heisman with your QB, survive the conference race + playoff, then enter the Draft. Your draftees boost your Pro team in Mashup mode.</p>
+        <h3 style="color:#f1c40f;">📱 Mobile</h3>
+        <p>On-screen D-pad + THROW/SNAP buttons appear on touch devices.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= OPTIONS ================= -->
+  <div id="screen-options" class="screen">
+    <div class="topbar">
+      <button class="rb-btn dark small" id="btn-options-back">← Back</button>
+      <div><h2>⚙ Options</h2></div>
+    </div>
+    <div class="scroll-area">
+      <div class="rb-panel" style="padding:18px; max-width:560px; margin:0 auto;">
+        <label style="display:block; margin:12px 0; font-family:Arial,sans-serif;">
+          Difficulty
+          <select id="opt-difficulty" style="display:block; width:100%; padding:10px; margin-top:6px; font-size:16px; border-radius:8px;">
+            <option value="rookie">Rookie — easy AI</option>
+            <option value="pro" selected>Pro — balanced (Retro Bowl default)</option>
+            <option value="allpro">All-Pro — tough AI</option>
+          </select>
+        </label>
+        <label style="display:block; margin:12px 0; font-family:Arial,sans-serif;">
+          Quarter length
+          <select id="opt-quarter" style="display:block; width:100%; padding:10px; margin-top:6px; font-size:16px; border-radius:8px;">
+            <option value="60">1:00 — quick games</option>
+            <option value="120" selected>2:00 — standard</option>
+            <option value="180">3:00 — longer games</option>
+          </select>
+        </label>
+        <label style="display:block; margin:12px 0; font-family:Arial,sans-serif;">
+          <input type="checkbox" id="opt-touch" checked> Show touch controls
+        </label>
+        <button class="rb-btn red small" id="btn-wipe-save">🗑 Wipe Save Data</button>
+        <p style="font-family:Arial,sans-serif; font-size:12px; opacity:.8;">Progress auto-saves to this browser.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= CHAMPION ================= -->
+  <div id="screen-champion" class="screen" style="background:linear-gradient(180deg,#0a1428,#1a2f0a); align-items:center; justify-content:center; text-align:center; padding:20px;">
+    <div style="font-size:80px;">🏆</div>
+    <div class="rb-title-logo" id="champion-title" style="font-size:clamp(30px,6vw,56px);">CHAMPIONS!</div>
+    <p id="champion-sub" style="font-family:Arial,sans-serif; font-size:16px; max-width:600px;"></p>
+    <div id="champion-stats" style="font-family:Arial,sans-serif;"></div>
+    <div class="btn-row" style="margin-top:16px;">
+      <button class="rb-btn gold" id="btn-champion-next">Next Season ▶</button>
+      <button class="rb-btn dark" id="btn-champion-menu">Main Menu</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   RETRO BOWL MASHUP — College × Pro
+   Single-file fan game. Canvas engine + DOM menus styled after Retro Bowl.
+   ===================================================================== */
+
+// ---------- Utilities ----------
+const $ = id => document.getElementById(id);
+const rand = (a,b)=> a + Math.random()*(b-a);
+const randi = (a,b)=> Math.floor(rand(a,b+1));
+const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
+const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+const shuffle = arr => { const a=[...arr]; for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+const fmt = n => Math.round(n).toLocaleString();
+function toast(msg, ms=2200){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"), ms); }
+function showScreen(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  $(id).classList.add("active");
+}
+
+// ---------- Data: Pro teams (32) ----------
+const PRO_TEAMS = [
+  {abbr:"ARI", city:"Arizona", name:"Cardinals", c1:"#97233F", c2:"#fff", div:"NFC West", ovr:82},
+  {abbr:"ATL", city:"Atlanta", name:"Falcons", c1:"#000", c2:"#A71930", div:"NFC South", ovr:84},
+  {abbr:"BAL", city:"Baltimore", name:"Ravens", c1:"#241773", c2:"#9E7C0C", div:"AFC North", ovr:88},
+  {abbr:"BUF", city:"Buffalo", name:"Bills", c1:"#00338D", c2:"#C60C30", div:"AFC East", ovr:89},
+  {abbr:"CAR", city:"Carolina", name:"Panthers", c1:"#0085CA", c2:"#101820", div:"NFC South", ovr:80},
+  {abbr:"CHI", city:"Chicago", name:"Bears", c1:"#0B162A", c2:"#C83803", div:"NFC North", ovr:82},
+  {abbr:"CIN", city:"Cincinnati", name:"Bengals", c1:"#FB4F14", c2:"#000", div:"AFC North", ovr:86},
+  {abbr:"CLE", city:"Cleveland", name:"Browns", c1:"#311D00", c2:"#FF3C00", div:"AFC North", ovr:81},
+  {abbr:"DAL", city:"Dallas", name:"Cowboys", c1:"#003594", c2:"#fff", div:"NFC East", ovr:87},
+  {abbr:"DEN", city:"Denver", name:"Broncos", c1:"#FB4F14", c2:"#002244", div:"AFC West", ovr:83},
+  {abbr:"DET", city:"Detroit", name:"Lions", c1:"#0076B6", c2:"#B0B7BC", div:"NFC North", ovr:88},
+  {abbr:"GB", city:"Green Bay", name:"Packers", c1:"#203731", c2:"#FFB612", div:"NFC North", ovr:86},
+  {abbr:"HOU", city:"Houston", name:"Texans", c1:"#03202F", c2:"#A71930", div:"AFC South", ovr:86},
+  {abbr:"IND", city:"Indianapolis", name:"Colts", c1:"#002C5F", c2:"#A2AAAD", div:"AFC South", ovr:83},
+  {abbr:"JAX", city:"Jacksonville", name:"Jaguars", c1:"#006778", c2:"#D7A22A", div:"AFC South", ovr:82},
+  {abbr:"KC", city:"Kansas City", name:"Chiefs", c1:"#E31837", c2:"#FFB81C", div:"AFC West", ovr:90},
+  {abbr:"LV", city:"Las Vegas", name:"Raiders", c1:"#000", c2:"#A5ACAF", div:"AFC West", ovr:81},
+  {abbr:"LAC", city:"LA", name:"Chargers", c1:"#0080C6", c2:"#FFC20E", div:"AFC West", ovr:85},
+  {abbr:"LAR", city:"LA", name:"Rams", c1:"#003594", c2:"#FFD100", div:"NFC West", ovr:85},
+  {abbr:"MIA", city:"Miami", name:"Dolphins", c1:"#008E97", c2:"#FC4C02", div:"AFC East", ovr:84},
+  {abbr:"MIN", city:"Minnesota", name:"Vikings", c1:"#4F2683", c2:"#FFC62F", div:"NFC North", ovr:85},
+  {abbr:"NE", city:"New England", name:"Patriots", c1:"#002244", c2:"#C8102E", div:"AFC East", ovr:79},
+  {abbr:"NO", city:"New Orleans", name:"Saints", c1:"#101820", c2:"#D3BC8D", div:"NFC South", ovr:81},
+  {abbr:"NYG", city:"NY", name:"Giants", c1:"#0B2265", c2:"#A71930", div:"NFC East", ovr:80},
+  {abbr:"NYJ", city:"NY", name:"Jets", c1:"#125740", c2:"#fff", div:"AFC East", ovr:80},
+  {abbr:"PHI", city:"Philadelphia", name:"Eagles", c1:"#004C54", c2:"#fff", div:"NFC East", ovr:89},
+  {abbr:"PIT", city:"Pittsburgh", name:"Steelers", c1:"#FFB612", c2:"#003087", div:"AFC North", ovr:84},
+  {abbr:"SF", city:"San Francisco", name:"49ers", c1:"#AA0000", c2:"#B3995D", div:"NFC West", ovr:88},
+  {abbr:"SEA", city:"Seattle", name:"Seahawks", c1:"#002244", c2:"#69BE28", div:"NFC West", ovr:86},
+  {abbr:"TB", city:"Tampa Bay", name:"Buccaneers", c1:"#D50A0A", c2:"#FF7900", div:"NFC South", ovr:85},
+  {abbr:"TEN", city:"Tennessee", name:"Titans", c1:"#0C2340", c2:"#4B92DB", div:"AFC South", ovr:81},
+  {abbr:"WAS", city:"Washington", name:"Commanders", c1:"#5A1414", c2:"#FFB612", div:"NFC East", ovr:83},
+];
+// ---------- Data: College teams (20) ----------
+const COLLEGE_TEAMS = [
+  {abbr:"ALA", city:"Alabama", name:"Crimson Tide", c1:"#9E1B32", c2:"#fff", conf:"SEC", ovr:90},
+  {abbr:"UGA", city:"Georgia", name:"Bulldogs", c1:"#BA0C2F", c2:"#000", conf:"SEC", ovr:89},
+  {abbr:"OSU", city:"Ohio State", name:"Buckeyes", c1:"#BB0000", c2:"#fff", conf:"Big Ten", ovr:89},
+  {abbr:"MICH", city:"Michigan", name:"Wolverines", c1:"#00274C", c2:"#FFCB05", conf:"Big Ten", ovr:88},
+  {abbr:"TEX", city:"Texas", name:"Longhorns", c1:"#BF5700", c2:"#fff", conf:"SEC", ovr:87},
+  {abbr:"LSU", city:"LSU", name:"Tigers", c1:"#461D7C", c2:"#FDD023", conf:"SEC", ovr:86},
+  {abbr:"FLA", city:"Florida", name:"Gators", c1:"#0021A5", c2:"#FA4616", conf:"SEC", ovr:85},
+  {abbr:"OKLA", city:"Oklahoma", name:"Sooners", c1:"#841617", c2:"#fff", conf:"SEC", ovr:85},
+  {abbr:"PENN", city:"Penn State", name:"Nittany Lions", c1:"#041E42", c2:"#fff", conf:"Big Ten", ovr:85},
+  {abbr:"ND", city:"Notre Dame", name:"Fighting Irish", c1:"#0C2340", c2:"#C99700", conf:"Independent", ovr:87},
+  {abbr:"CLEM", city:"Clemson", name:"Tigers", c1:"#F56600", c2:"#522D6D", conf:"ACC", ovr:85},
+  {abbr:"ORE", city:"Oregon", name:"Ducks", c1:"#154733", c2:"#FEE123", conf:"Big Ten", ovr:86},
+  {abbr:"MIA", city:"Miami", name:"Hurricanes", c1:"#F47321", c2:"#005030", conf:"ACC", ovr:84},
+  {abbr:"USC", city:"USC", name:"Trojans", c1:"#990000", c2:"#FFC72C", conf:"Big Ten", ovr:84},
+  {abbr:"TENN", city:"Tennessee", name:"Volunteers", c1:"#FF8200", c2:"#fff", conf:"SEC", ovr:84},
+  {abbr:"AUB", city:"Auburn", name:"Tigers", c1:"#03244D", c2:"#F26522", conf:"SEC", ovr:83},
+  {abbr:"COLO", city:"Colorado", name:"Buffaloes", c1:"#000", c2:"#CFB87C", conf:"Big 12", ovr:83},
+  {abbr:"FSU", city:"Florida State", name:"Seminoles", c1:"#782F40", c2:"#CEB888", conf:"ACC", ovr:84},
+  {abbr:"WISC", city:"Wisconsin", name:"Badgers", c1:"#C5050C", c2:"#fff", conf:"Big Ten", ovr:83},
+  {abbr:"UNC", city:"North Carolina", name:"Tar Heels", c1:"#7BAFD4", c2:"#fff", conf:"ACC", ovr:82},
+];
+
+const FIRST_NAMES = ["James","John","Robert","Michael","William","David","Richard","Joseph","Thomas","Charles","Chris","Daniel","Matthew","Anthony","Mark","Donald","Steven","Paul","Andrew","Joshua","Kenneth","Kevin","Brian","George","Timothy","Ronald","Edward","Jason","Jeffrey","Ryan","Jacob","Gary","Nicholas","Eric","Jonathan","Stephen","Larry","Justin","Scott","Brandon","Frank","Benjamin","Samuel","Gregory","Alexander","Patrick","Jack","Dennis","Jerry","Tyler","Aaron","Jose","Adam","Nathan","Henry","Douglas","Zachary","Kyle","Noah","Ethan","Jeremy","Walter","Harold","Keith","Christian","Roger","Terry","Austin","Sean","Gerald","Carl","Dylan","Arthur","Lawrence","Jordan","Bryan","Billy","Bruce","Gabriel","Logan","Alan","Juan","Wayne","Roy","Ralph","Royce","Eugene","Russell","Bobby","Victor","Martin","Ernest","Phillip","Todd","Jesse","Craig","Alan","Shawn","Clarence","Sean","Philip","Chris","Johnny","Earl","Jimmy","Antonio","Danny","Bryan","Anthony","Rob","Peter","Eric","Nathan","Adam","David","Zach","Kyle","Otto"];
+const LAST_NAMES = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin","Lee","Perez","Thompson","White","Harris","Sanchez","Clark","Ramirez","Lewis","Robinson","Walker","Young","Allen","King","Wright","Scott","Torres","Hill","Flores","Green","Adams","Nelson","Baker","Hall","Rivera","Campbell","Mitchell","Carter","Roberts","Gomez","Phillips","Evans","Turner","Diaz","Parker","Cruz","Edwards","Collins","Reyes","Stewart","Morris","Morales","Murphy","Cook","Rogers","Gutierrez","Ortiz","Morgan","Cooper","Peterson","Bailey","Reed","Kelly","Howard","Ramos","Kim","Cox","Ward","Richardson","Watson","Brooks","Chavez","Wood","James","Bennett","Gray","Mendoza","Ruiz","Hughes","Price","Alvarez","Castillo","Sanders","Patel","Myers","Long","Ross","Foster","Jimenez","Powell","Jenkins","Perry","Russell","Sullivan","Bell","Coleman","Butler","Henderson","Barnes","Gonzales","Fisher","Vasquez","Simmons","Romero","Jordan","Patterson","Alexander","Hamilton","Graham","Reynolds","Griffin","Wallace","Moreno","West","Cole","Hayes","Bryant","Herrera","Gibson","Ellis","Tran","Medina","Aguilar","Stevens","Murray","Ford","Marshall","Owens","McDonald","Harrison","Ruiz","Kennedy","Wells","Alvarez","Woods","Higgins","Sandoval","Webb","Washington","Tucker","Freeman","Burns","Henry","Vasquez","Snyder","Crawford","Jimenez","Nichols","Grant","Black","Dunn","Perkins","Hudson","Spencer","Gardner","Stephens","Payne","Pierce","Berry","Matthews","Arnold","Wagner","Willis","Watkins","Olson","Carroll","Duncan","Snyder","Hart","Cunningham","Bradley","Lane","Andrews","Ruiz","Harper","Fox","Riley","Armstrong","Carpenter","Weaver","Greene","Blackburn","Alvarez","Bryan","Hansen","Gibbs","Ingram","Reeves","Wolfe","Hammond","Miles","May","Hogan","Hodge","Burch","Thorne","Vance","Caldwell","Dixon","Hunt","Black","Holmes","Palmer","Mills","Nichols","Grant","Knight","Ferguson","Rose","Stone","Hawkins","Dunn","Perkins","Hudson","Spencer","Gardner","Stephens","Payne","Pierce","Berry","Matthews","Arnold","Wagner","Willis","Watkins","Olson","Carroll","Duncan","Snyder","Hart","Cunningham","Bradley","Lane","Andrews","Ruiz","Harper","Fox","Riley","Armstrong","Carpenter","Weaver","Greene","Blackburn","Alvarez","Bryan","Hansen","Gibbs","Ingram","Reeves","Wolfe","Hammond","Miles","May","Hogan","Hodge","Burch","Thorne","Vance","Caldwell","Dixon","Hunt","Black","Holmes","Palmer","Mills","Nichols","Grant","Knight","Ferguson","Rose","Stone","Hawkins"];
+function genName(){ return pick(FIRST_NAMES)+" "+pick(LAST_NAMES); }
+
+// ---------- State ----------
+const SAVE_KEY = "retroBowlMashupSaveV1";
+let S = null; // career state
+let settings = { difficulty:"pro", quarter:120, touch:true };
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY+"_settings")||"null"); if(s) settings = {...settings, ...s}; } catch(e){}
+function saveSettings(){ try{ localStorage.setItem(SAVE_KEY+"_settings", JSON.stringify(settings)); }catch(e){} }
+function saveGame(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
+function loadGame(){ try{ const s = JSON.parse(localStorage.getItem(SAVE_KEY)||"null"); if(s && s.teamAbbr) return s; }catch(e){} return null; }
+function wipeSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} S=null; refreshTitle(); toast("Save wiped."); }
+
+function newCareer(mode, teamAbbr){
+  const teams = mode==="college" ? COLLEGE_TEAMS : PRO_TEAMS;
+  const team = teams.find(t=>t.abbr===teamAbbr) || teams[0];
+  const opponents = shuffle(teams.filter(t=>t.abbr!==teamAbbr));
+  const numGames = mode==="college" ? 12 : 17;
+  const schedule = opponents.slice(0, numGames).map((o,i)=>({ week:i+1, opp:o.abbr, played:false, result:null, scoreFor:null, scoreAgainst:null }));
+  // standings: all teams
+  const standings = teams.map(t=>({ abbr:t.abbr, w:0, l:0, pf:0, pa:0 }));
+  const roster = genRoster(team, mode);
+  S = {
+    mode, // 'college' | 'pro' | 'mashup' (starts college)
+    phase: mode==="mashup" ? "college" : mode, // current phase for mashup
+    teamAbbr, week:1, schedule, standings,
+    roster, seasonStats:{}, heisman:{},
+    playoffs:null, champion:null,
+    draftClass:[], recruitsUsed:0,
+    careerHistory:[],
+    createdAt:Date.now()
+  };
+  // pre-generate draft class for college/mashup
+  if(mode!=="pro") S.draftClass = genDraftClass();
+  saveGame();
+  return S;
+}
+function currentTeams(){ return (S.phase==="college" ? COLLEGE_TEAMS : PRO_TEAMS); }
+function teamByAbbr(abbr){ return currentTeams().find(t=>t.abbr===abbr) || PRO_TEAMS.find(t=>t.abbr===abbr) || COLLEGE_TEAMS.find(t=>t.abbr===abbr); }
+function myTeam(){ return teamByAbbr(S.teamAbbr); }
+function oppTeam(){ const g = S.schedule[S.week-1]; return g ? teamByAbbr(g.opp) : null; }
+
+function genRoster(team, mode){
+  const base = team.ovr;
+  const mk = (pos, num, delta)=>({ name:genName(), pos, num, rating: clamp(Math.round(base+rand(-6,8)+delta), 55, 99), age: mode==="college"? randi(18,23): randi(21,36), stats:{ passYds:0, passTD:0, rushYds:0, rushTD:0, recYds:0, recTD:0, tackles:0, sacks:0, ints:0, games:0 } });
+  const r = [];
+  r.push(mk("QB", 7, 4)); r.push(mk("QB", 12, -8));
+  r.push(mk("RB", 22, 2)); r.push(mk("RB", 28, -6));
+  r.push(mk("WR", 11, 3)); r.push(mk("WR", 13, 1)); r.push(mk("WR", 84, -2)); r.push(mk("WR", 80, -7));
+  r.push(mk("TE", 85, 0)); r.push(mk("TE", 88, -8));
+  r.push(mk("LB", 52, 2)); r.push(mk("LB", 55, 0)); r.push(mk("LB", 58, -5));
+  r.push(mk("CB", 24, 2)); r.push(mk("CB", 21, -2)); r.push(mk("S", 31, 1)); r.push(mk("S", 36, -4));
+  r.push(mk("K", 3, 0)); r.push(mk("P", 5, 0));
+  return r;
+}
+function genDraftClass(){
+  const pool = [];
+  for(let i=0;i<24;i++){
+    const t = pick(COLLEGE_TEAMS);
+    const pos = pick(["QB","RB","WR","WR","TE","LB","CB","S"]);
+    pool.push({ name:genName(), pos, college:t.city+" "+t.name, collegeAbbr:t.abbr, rating: randi(78,96), age: randi(20,23) });
+  }
+  pool.sort((a,b)=>b.rating-a.rating);
+  return pool;
+}
+function rosterByPos(pos){ return S.roster.filter(p=>p.pos===pos); }
+function bestPlayer(pos){ const l = rosterByPos(pos); return l.length ? [...l].sort((a,b)=>b.rating-a.rating)[0] : null; }
+function teamOffRating(){ const qb=bestPlayer("QB"), rb=bestPlayer("RB"), wr=bestPlayer("WR"); return Math.round(((qb?qb.rating:80)+(rb?rb.rating:80)+(wr?wr.rating:80))/3); }
+function teamDefRating(){ const lb=bestPlayer("LB"), cb=bestPlayer("CB"), s=bestPlayer("S"); return Math.round(((lb?lb.rating:80)+(cb?cb.rating:80)+(s?s.rating:80))/3); }
+function teamOvr(){ return Math.round((teamOffRating()+teamDefRating())/2); }
+
+// ---------- Title / navigation ----------
+function refreshTitle(){
+  const saved = loadGame();
+  $("btn-continue").style.display = saved ? "block" : "none";
+  if(saved){
+    const t = teamByAbbr(saved.teamAbbr);
+    $("title-save-info").textContent = `💾 Saved: ${t? t.city+" "+t.name : saved.teamAbbr} • ${saved.phase==="college"?"College":"Pro"} • Week ${saved.week} • ${saved.standings.find(s=>s.abbr===saved.teamAbbr)?.w||0}-${saved.standings.find(s=>s.abbr===saved.teamAbbr)?.l||0}`;
+  } else $("title-save-info").textContent = "";
+}
+let pendingMode = "college";
+let selectedTeam = null;
+
+function openTeamSelect(mode){
+  pendingMode = mode;
+  selectedTeam = null;
+  $("btn-start-season").disabled = true;
+  const isCollege = (mode==="college"||mode==="mashup");
+  $("team-select-title").textContent = isCollege ? "🎓 Select Your College" : "🏈 Select Your Pro Team";
+  $("team-select-sub").textContent = isCollege ? "Tap a college to coach it. Win the championship, get drafted, go pro!" : "Tap an NFL team to coach it. Chase the Super Bowl!";
+  renderTeamGrid(isCollege ? COLLEGE_TEAMS : PRO_TEAMS, isCollege ? "conf" : "div");
+  showScreen("screen-team");
+}
+function renderTeamGrid(teams, groupKey){
+  const grid = $("team-grid"); grid.innerHTML = "";
+  const groups = {};
+  teams.forEach(t=>{ (groups[t[groupKey]] = groups[t[groupKey]]||[]).push(t); });
+  Object.keys(groups).sort().forEach(g=>{
+    const h = document.createElement("div"); h.className="div-header"; h.textContent = g; grid.appendChild(h);
+    groups[g].forEach(t=>{
+      const card = document.createElement("div"); card.className="team-card";
+      card.innerHTML = `<div class="helmet" style="background:${t.c1}">${t.abbr}</div><div class="tname">${t.city} ${t.name}</div><span class="tovr">${t.ovr} OVR</span>`;
+      card.onclick = ()=>{ selectedTeam = t.abbr; document.querySelectorAll(".team-card").forEach(c=>c.classList.remove("selected")); card.classList.add("selected"); $("btn-start-season").disabled=false; };
+      grid.appendChild(card);
+    });
+  });
+}
+
+// ---------- Hub ----------
+function renderHub(){
+  if(!S) return;
+  const t = myTeam();
+  $("hub-badge").textContent = t.abbr; $("hub-badge").style.background = t.c1;
+  $("hub-team-name").textContent = `${t.city} ${t.name}`;
+  const st = S.standings.find(s=>s.abbr===S.teamAbbr) || {w:0,l:0};
+  const phaseLabel = S.phase==="college" ? "College" : "Pro";
+  const totalWeeks = S.schedule.length;
+  $("hub-meta").textContent = `${phaseLabel} • Week ${S.week}/${totalWeeks} • ${st.w}-${st.l} • OVR ${teamOvr()} (OFF ${teamOffRating()} / DEF ${teamDefRating()})`;
+  $("hub-week-label").textContent = S.week<=totalWeeks ? `Week ${S.week}` : "Playoffs";
+  const g = S.schedule[S.week-1];
+  if(g){
+    const o = teamByAbbr(g.opp);
+    $("hub-matchup").textContent = `${t.abbr} vs ${o.abbr} — ${o.city} ${o.name}`;
+    $("hub-matchup-sub").textContent = `Opponent OVR ${o.ovr} • ${o.conf||o.div} • ${g.played? "Played: "+g.result : "Not played yet"}`;
+    $("btn-play-game").textContent = g.played ? "▶ REPLAY / SIM?" : "▶ PLAY GAME";
+    $("btn-play-game").disabled = false;
+  } else {
+    $("hub-matchup").textContent = "Playoffs — bracket set!";
+    $("hub-matchup-sub").textContent = "Win and advance to the championship.";
+    $("btn-play-game").textContent = "▶ PLAY PLAYOFF GAME";
+    $("btn-play-game").disabled = !S.playoffs;
+  }
+  // stats chips
+  const qb = bestPlayer("QB");
+  $("hub-stats").innerHTML = `
+    <span class="stat-chip">QB <b>${qb?qb.name.split(" ")[1]:"—"}</b> ${qb?qb.rating:""}</span>
+    <span class="stat-chip">Pass Yds <b>${fmt(qb?qb.stats.passYds:0)}</b></span>
+    <span class="stat-chip">Pass TD <b>${qb?qb.stats.passTD:0}</b></span>
+    <span class="stat-chip">Team OVR <b>${teamOvr()}</b></span>
+    ${S.phase==="college" ? `<span class="stat-chip">Heisman Pts <b>${S.heisman[S.teamAbbr]||0}</b></span>` : ""}
+  `;
+  // schedule
+  $("hub-schedule").innerHTML = S.schedule.map(g=>{
+    const o = teamByAbbr(g.opp);
+    const cur = g.week===S.week ? " 👈" : "";
+    const res = g.played ? ` <b>${g.result}</b> ${g.scoreFor}-${g.scoreAgainst}` : "";
+    return `<div style="padding:3px 0; border-bottom:1px solid #22365a;">Wk ${g.week}: vs ${o.abbr}${res}${cur}</div>`;
+  }).join("") + (S.playoffs ? `<div style="padding:3px 0; color:#f1c40f;">🏆 Playoffs: ${S.playoffs.stage}</div>` : "");
+  // top5
+  const sorted = [...S.standings].sort((a,b)=> (b.w-a.w) || ((b.pf-b.pa)-(a.pf-a.pa)));
+  $("hub-top-title").textContent = S.phase==="college" ? "Power Rankings" : "Standings";
+  $("hub-top5").innerHTML = sorted.slice(0,5).map((s,i)=>{ const tt=teamByAbbr(s.abbr); return `<div style="padding:3px 0;">${i+1}. ${tt?tt.abbr:s.abbr} ${s.w}-${s.l}</div>`; }).join("");
+  // stars
+  const stars = [...S.roster].sort((a,b)=>b.rating-a.rating).slice(0,5);
+  $("hub-stars").innerHTML = stars.map(p=>`<div style="padding:3px 0;">⭐ ${p.pos} ${p.name} <b>${p.rating}</b></div>`).join("");
+  $("btn-hub-recruit").style.display = S.phase==="college" ? "inline-block" : "none";
+  $("btn-hub-draft").style.display = (S.phase==="college"||S.mode==="mashup") ? "inline-block" : "none";
+  saveGame();
+}
+
+// ---------- Roster / Standings / Recruit / Draft screens ----------
+function renderRoster(){
+  $("roster-sub").textContent = `${myTeam().city} ${myTeam().name} • OVR ${teamOvr()}`;
+  const order = ["QB","RB","WR","TE","LB","CB","S","K","P"];
+  const sorted = [...S.roster].sort((a,b)=> order.indexOf(a.pos)-order.indexOf(b.pos) || b.rating-a.rating);
+  $("roster-grid").innerHTML = sorted.map(p=>`
+    <div class="player-card"><span class="prating">${p.rating}</span>
+      <div class="pname">#${p.num} ${p.name}</div>
+      <div>${p.pos} • Age ${p.age}</div>
+      <div style="opacity:.85; margin-top:4px;">Pass ${p.stats.passYds}yd ${p.stats.passTD}TD • Rush ${p.stats.rushYds}yd ${p.stats.rushTD}TD • Rec ${p.stats.recYds}yd ${p.stats.recTD}TD • Tkl ${p.stats.tackles} • Sack ${p.stats.sacks} • INT ${p.stats.ints}</div>
+    </div>`).join("");
+}
+function renderStandings(){
+  $("standings-sub").textContent = S.phase==="college" ? "College standings & power rankings" : "NFL standings";
+  const sorted = [...S.standings].sort((a,b)=> (b.w-a.w) || ((b.pf-b.pa)-(a.pf-a.pa)));
+  $("standings-wrap").innerHTML = `<table class="rb-table"><tr><th>#</th><th>Team</th><th>W</th><th>L</th><th>PF</th><th>PA</th><th>Diff</th></tr>` +
+    sorted.map((s,i)=>{ const t=teamByAbbr(s.abbr); return `<tr class="${s.abbr===S.teamAbbr?"me":""}"><td>${i+1}</td><td>${t?t.city+" "+t.name:s.abbr}</td><td>${s.w}</td><td>${s.l}</td><td>${s.pf}</td><td>${s.pa}</td><td>${s.pf-s.pa>0?"+":""}${s.pf-s.pa}</td></tr>`; }).join("") + `</table>`;
+}
+let recruitPicksLeft = 0, recruitPicked = new Set();
+function renderRecruit(){
+  recruitPicksLeft = 3; recruitPicked = new Set();
+  $("recruit-picks-left").textContent = `Picks left: ${recruitPicksLeft}`;
+  const pool = [];
+  for(let i=0;i<12;i++){
+    const pos = pick(["QB","RB","WR","WR","TE","LB","CB","S"]);
+    pool.push({ name:genName(), pos, rating: randi(72,92), age: S.phase==="college"? randi(17,19): randi(20,24), _id:i });
+  }
+  pool.sort((a,b)=>b.rating-a.rating);
+  $("recruit-grid").innerHTML = pool.map(p=>`
+    <div class="recruit-card" data-id="${p._id}">
+      <div style="font-weight:900;">${p.name} <span style="float:right; background:#f1c40f; color:#000; border-radius:12px; padding:1px 8px;">${p.rating}</span></div>
+      <div>${p.pos} • ${S.phase==="college"?"5★ recruit":"Free agent"} • Age ${p.age}</div>
+      <div style="opacity:.8;">Tap to sign (max 3).</div>
+    </div>`).join("");
+  $("recruit-grid").querySelectorAll(".recruit-card").forEach(card=>{
+    card.onclick = ()=>{
+      const id = +card.dataset.id;
+      if(recruitPicked.has(id)){ recruitPicked.delete(id); card.classList.remove("picked"); }
+      else if(recruitPicksLeft>0){ recruitPicked.add(id); card.classList.add("picked"); }
+      else { toast("No picks left!"); return; }
+      recruitPicksLeft = 3 - recruitPicked.size;
+      $("recruit-picks-left").textContent = `Picks left: ${recruitPicksLeft}`;
+    };
+  });
+}
+function renderDraft(){
+  $("draft-sub").textContent = S.phase==="college" ? "Top college prospects for the upcoming Pro Draft." : "Your pro draft board.";
+  const list = S.draftClass.length ? S.draftClass : genDraftClass();
+  $("draft-wrap").innerHTML = `<table class="rb-table"><tr><th>Rank</th><th>Player</th><th>Pos</th><th>College</th><th>Rating</th></tr>` +
+    list.slice(0,20).map((p,i)=>`<tr><td>${i+1}</td><td>${p.name}</td><td>${p.pos}</td><td>${p.college}</td><td>${p.rating}</td></tr>`).join("") + `</table>` +
+    `<p style="font-family:Arial,sans-serif; font-size:13px;">In Mashup mode, your college stars carry into the pros after you win/complete the college season.</p>`;
+}
+
+// ---------- Season simulation ----------
+function simGame(homeAbbr, awayAbbr){
+  const h = teamByAbbr(homeAbbr), a = teamByAbbr(awayAbbr);
+  const hOvr = (h.abbr===S.teamAbbr? teamOvr(): h.ovr) + rand(-4,4);
+  const aOvr = (a.abbr===S.teamAbbr? teamOvr(): a.ovr) + rand(-4,4);
+  let hs = Math.max(0, Math.round(17 + (hOvr-aOvr)*0.9 + rand(-10,14)));
+  let as = Math.max(0, Math.round(17 + (aOvr-hOvr)*0.9 + rand(-10,14)));
+  if(hs===as) hs++;
+  return { hs, as };
+}
+function simOtherGames(){
+  const teams = currentTeams();
+  // pair up teams not playing user this week (simple round-robin sim)
+  const others = teams.filter(t=>t.abbr!==S.teamAbbr);
+  // shuffle and pair
+  const sh = shuffle(others);
+  for(let i=0;i+1<sh.length;i+=2){
+    const {hs, as} = simGame(sh[i].abbr, sh[i+1].abbr);
+    const hsRow = S.standings.find(s=>s.abbr===sh[i].abbr), asRow = S.standings.find(s=>s.abbr===sh[i+1].abbr);
+    if(hsRow){ hsRow.pf+=hs; hsRow.pa+=as; if(hs>as) hsRow.w++; else hsRow.l++; }
+    if(asRow){ asRow.pf+=as; asRow.pa+=hs; if(as>hs) asRow.w++; else asRow.l++; }
+  }
+}
+function recordUserResult(forPts, againstPts){
+  const g = S.schedule[S.week-1];
+  if(g && !g.played){
+    g.played = true; g.scoreFor = forPts; g.scoreAgainst = againstPts;
+    g.result = forPts>againstPts ? "W" : (forPts<againstPts ? "L" : "T");
+    const row = S.standings.find(s=>s.abbr===S.teamAbbr);
+    if(row){ row.pf+=forPts; row.pa+=againstPts; if(forPts>againstPts) row.w++; else if(forPts<againstPts) row.l++; }
+    // player stats already accumulated in game; bump games played
+    S.roster.forEach(p=>p.stats.games++);
+  }
+  simOtherGames();
+  S.week++;
+  if(S.week > S.schedule.length && !S.playoffs){
+    buildPlayoffs();
+  }
+  saveGame();
+}
+function buildPlayoffs(){
+  const sorted = [...S.standings].sort((a,b)=> (b.w-a.w) || ((b.pf-b.pa)-(a.pf-a.pa)));
+  const top = sorted.slice(0,8).map(s=>s.abbr);
+  // bracket: QF, SF, Final
+  S.playoffs = { stage:"Quarterfinals", teams:top, results:[], userAlive: top.includes(S.teamAbbr) };
+  toast("Playoffs set! Top 8 advance.");
+}
+function simPlayoffRound(){
+  if(!S.playoffs) return;
+  const p = S.playoffs;
+  if(p.stage==="Quarterfinals"){
+    p.results = [];
+    for(let i=0;i<p.teams.length;i+=2){
+      const {hs,as} = simGame(p.teams[i], p.teams[i+1]);
+      p.results.push({ a:p.teams[i], b:p.teams[i+1], sa:hs, sb:as, winner: hs>as? p.teams[i]:p.teams[i+1] });
+    }
+    p.teams = p.results.map(r=>r.winner);
+    p.stage = "Semifinals";
+    p.userAlive = p.teams.includes(S.teamAbbr);
+  } else if(p.stage==="Semifinals"){
+    p.results = [];
+    for(let i=0;i<p.teams.length;i+=2){
+      const {hs,as} = simGame(p.teams[i], p.teams[i+1]);
+      p.results.push({ a:p.teams[i], b:p.teams[i+1], sa:hs, sb:as, winner: hs>as? p.teams[i]:p.teams[i+1] });
+    }
+    p.teams = p.results.map(r=>r.winner);
+    p.stage = "Championship";
+    p.userAlive = p.teams.includes(S.teamAbbr);
+  }
+}
+function playoffOpponent(){
+  if(!S.playoffs || !S.playoffs.userAlive) return null;
+  // find user's next opponent: first other team in current round
+  const others = S.playoffs.teams.filter(a=>a!==S.teamAbbr);
+  return others.length ? others[0] : null;
+}
+
+/* =====================================================================
+   GAME ENGINE — side-view football
+   Field: 120 yards (0..120, end zones 0-10 and 110-120, field 10..110)
+   Ball position: yards from own goal (0 = own end line). First down at 10.
+   ===================================================================== */
+const canvas = $("game-canvas"), ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const FIELD_Y = 300; // y of field center line area
+const PX_PER_YARD = 7.2; // horizontal scale
+const CAMERA_W = W; // visible yards = W / PX_PER_YARD ≈ 133 — shows most of field; camera still pans slightly
+
+const G = {
+  running:false, paused:false, raf:null,
+  home:null, away:null, // team objects; home = user? We'll make user = home for HUD simplicity, but possession alternates.
+  userIsHome:true,
+  scoreHome:0, scoreAway:0,
+  quarter:1, clock:120, // seconds
+  down:1, toGo:10, ballOn:25, // ballOn in yards from own goal (10..110)
+  possession:"home", // "home"|"away"
+  phase:"playcall", // playcall | presnap | live | ballInAir | dead | fg | kickoff
+  playType:"pass", // pass | run
+  players:[], ball:{x:0,y:0,vx:0,vy:0, inAir:false, target:null, t:0, dur:0, sx:0, sy:0, tx:0, ty:0},
+  cameraX:0,
+  keys:{},
+  stats:{ home:{passYds:0,passTD:0,rushYds:0,rushTD:0,turnovers:0}, away:{passYds:0,passTD:0,rushYds:0,rushTD:0,turnovers:0} },
+  timeouts:{home:3, away:3},
+  fg:{ active:false, pos:0, dir:1, speed:1.6 },
+  msgTimer:0,
+  userControlled:null, // player ref
+  playClock:0,
+  lastPlayGain:0,
+  halftimeShown:false,
+  gameOver:false,
+  aiThink:0,
+  kickoffTimer:0,
+};
+
+function yardsToPx(y){ return y * PX_PER_YARD; }
+function ballPx(){ return yardsToPx(G.ballOn) - G.cameraX; }
+function clampCamera(){
+  const fieldPx = 120*PX_PER_YARD;
+  const ballX = yardsToPx(G.ballOn);
+  G.cameraX = clamp(ballX - W*0.45, 0, Math.max(0, fieldPx - W));
+}
+function difficultyMods(){
+  if(settings.difficulty==="rookie") return { aiSpeed:0.82, aiCatch:0.85, userSpeed:1.12, aiThrowErr:1.5 };
+  if(settings.difficulty==="allpro") return { aiSpeed:1.12, aiCatch:1.15, userSpeed:0.95, aiThrowErr:0.7 };
+  return { aiSpeed:1.0, aiCatch:1.0, userSpeed:1.0, aiThrowErr:1.0 };
+}
+
+function startGame(userAbbr, oppAbbr){
+  if(G.raf) cancelAnimationFrame(G.raf);
+  G.home = teamByAbbr(userAbbr); G.away = teamByAbbr(oppAbbr);
+  G.userIsHome = true;
+  G.scoreHome = 0; G.scoreAway = 0;
+  G.quarter = 1; G.clock = settings.quarter;
+  G.down = 1; G.toGo = 10; G.ballOn = 25;
+  G.possession = "home";
+  G.stats = { home:{passYds:0,passTD:0,rushYds:0,rushTD:0,turnovers:0}, away:{passYds:0,passTD:0,rushYds:0,rushTD:0,turnovers:0} };
+  G.timeouts = {home:3, away:3};
+  G.gameOver = false; G.halftimeShown = false;
+  G.phase = "playcall";
+  G.running = true; G.paused = false; G.aiThink = 0; G._clockAcc = 0; G.players = [];
+  lastT = 0;
+  $("hud-home-abbr").textContent = G.home.abbr; $("hud-away-abbr").textContent = G.away.abbr;
+  showScreen("screen-game");
+  $("touch-controls").classList.toggle("show", settings.touch && ("ontouchstart" in window || navigator.maxTouchPoints>0));
+  updateHUD();
+  showPlayCall();
+  loop();
+}
+function offenseTeam(){ return G.possession==="home" ? G.home : G.away; }
+function defenseTeam(){ return G.possession==="home" ? G.away : G.home; }
+function userOnOffense(){ return G.possession==="home"; } // user is home
+function updateHUD(){
+  $("hud-home-score").textContent = G.scoreHome;
+  $("hud-away-score").textContent = G.scoreAway;
+  const q = G.quarter>4 ? "OT" : "Q"+G.quarter;
+  const mm = Math.floor(G.clock/60), ss = Math.floor(G.clock%60);
+  $("hud-clock").textContent = `${q} ${mm}:${String(ss).padStart(2,"0")}`;
+  const ord = ["","1st","2nd","3rd","4th"][G.down] || G.down+"th";
+  const fieldPos = G.ballOn<=50 ? `Own ${G.ballOn}` : `Opp ${100-G.ballOn}`;
+  $("hud-down").textContent = `${ord} & ${G.toGo} • Ball on ${fieldPos}`;
+  $("hud-timeouts").textContent = `TO: ${G.timeouts.home}-${G.timeouts.away}`;
+}
+function showMsg(html, ms=2600){
+  const m = $("play-msg"); m.innerHTML = html; m.style.display="block";
+  clearTimeout(m._h); m._h = setTimeout(()=>{ m.style.display="none"; }, ms);
+}
+function hideMsg(){ $("play-msg").style.display="none"; }
+
+// ---------- Play setup ----------
+function setupPlay(){
+  G.players = []; G.aiThink = 0; G._clockAcc = 0;
+  const off = offenseTeam(), def = defenseTeam();
+  const los = G.ballOn; // yards
+  const losPx = yardsToPx(los);
+  const dir = 1; // offense moves right (+x)
+  // Offense: QB, RB, 4 WR/TE, 5 OL (visual)
+  const qb = { team:G.possession, role:"QB", x:losPx-14, y:FIELD_Y+30, vx:0, vy:0, speed:2.6, num:7, color:off.c1, ctrl:false, hasBall:true, route:null, wp:[], wpi:0, name:"QB" };
+  const rb = { team:G.possession, role:"RB", x:losPx-26, y:FIELD_Y+30, vx:0, vy:0, speed:3.0, num:22, color:off.c1, ctrl:false, hasBall:false, route:null, wp:[], wpi:0, name:"RB" };
+  G.players.push(qb, rb);
+  // receivers with routes depending on playType
+  const recSpots = [ {y:FIELD_Y-90}, {y:FIELD_Y-30}, {y:FIELD_Y+30}, {y:FIELD_Y+90} ];
+  const routes = G.playType==="run"
+    ? [ ["block","block"], ["block","block"], ["block","block"], ["block","block"] ]
+    : pick([
+        [["go"],["go"],["slant"],["out"]],
+        [["go"],["post"],["go"],["curl"]],
+        [["slant"],["out"],["go"],["go"]],
+        [["out"],["go"],["slant"],["post"]],
+      ]);
+  recSpots.forEach((s,i)=>{
+    const r = { team:G.possession, role:"WR", x:losPx-4, y:s.y, vx:0, vy:0, speed:3.1, num:[11,13,84,80][i], color:off.c1, ctrl:false, hasBall:false, route:routes[i], wp:[], wpi:0, name:"WR"+(i+1), routeT:0 };
+    buildRoute(r, losPx, routes[i]);
+    G.players.push(r);
+  });
+  // OL
+  for(let i=0;i<5;i++){
+    G.players.push({ team:G.possession, role:"OL", x:losPx-6, y:FIELD_Y-60+i*30, vx:0, vy:0, speed:1.6, num:60+i, color:off.c1, ctrl:false, hasBall:false, route:null, wp:[], wpi:0, name:"OL", blockT: rand(1.2,2.2) });
+  }
+  // Defense: 4 rushers, 4 CBs, 2 S, 1 LB (user-controlled on defense)
+  const defs = [];
+  const rushSpots = [FIELD_Y-60, FIELD_Y-20, FIELD_Y+20, FIELD_Y+60];
+  rushSpots.forEach((y,i)=>{
+    defs.push({ team: G.possession==="home"?"away":"home", role:"DL", x:losPx+10, y, vx:0, vy:0, speed:2.5, num:90+i, color:def.c1, ctrl:false, hasBall:false, route:null, wp:[], wpi:0, name:"DL", target:qb });
+  });
+  recSpots.forEach((s,i)=>{
+    defs.push({ team: G.possession==="home"?"away":"home", role:"CB", x:losPx+14, y:s.y, vx:0, vy:0, speed:3.0, num:24+i, color:def.c1, ctrl:false, hasBall:false, route:null, wp:[], wpi:0, name:"CB", coverIdx:i });
+  });
+  defs.push({ team: G.possession==="home"?"away":"home", role:"S", x:losPx+90, y:FIELD_Y-40, vx:0, vy:0, speed:3.0, num:31, color:def.c1, ctrl:false, hasBall:false, route:null, wp:[], wpi:0, name:"S1" });
+  defs.push({ team: G.possession==="home"?"away":"home", role:"S", x:losPx+90, y:FIELD_Y+40, vx:0, vy:0, speed:3.0, num:36, color:def.c1, ctrl:false, hasBall:false, route:null, wp:[], wpi:0, name:"S2" });
+  const lb = { team: G.possession==="home"?"away":"home", role:"LB", x:losPx+40, y:FIELD_Y, vx:0, vy:0, speed:3.0, num:52, color:def.c1, ctrl:false, hasBall:false, route:null, wp:[], wpi:0, name:"LB" };
+  defs.push(lb);
+  G.players.push(...defs);
+  G.ball.x = qb.x+8; G.ball.y = qb.y; G.ball.inAir = false;
+  G.userControlled = userOnOffense() ? qb : lb;
+  if(G.userControlled) G.userControlled.ctrl = true;
+  G.phase = "presnap";
+  clampCamera();
+  updateHUD();
+}
+function buildRoute(p, losPx, route){
+  p.wp = []; p.wpi = 0;
+  const x0 = p.x, y0 = p.y;
+  if(route[0]==="go"){ p.wp = [ {x:x0+170, y:y0}, {x:x0+320, y:y0} ]; }
+  else if(route[0]==="slant"){ p.wp = [ {x:x0+60, y:FIELD_Y}, {x:x0+180, y:FIELD_Y} ]; }
+  else if(route[0]==="out"){ p.wp = [ {x:x0+90, y:y0}, {x:x0+110, y:y0 + (y0<FIELD_Y? -70: 70)} ]; }
+  else if(route[0]==="post"){ p.wp = [ {x:x0+80, y:y0}, {x:x0+200, y:FIELD_Y} ]; }
+  else if(route[0]==="curl"){ p.wp = [ {x:x0+100, y:y0}, {x:x0+100, y:y0} ]; }
+  else { p.wp = [ {x:x0+120, y:y0} ]; } // block
+}
+function getQB(){ return G.players.find(p=>p.role==="QB"); }
+function getRB(){ return G.players.find(p=>p.role==="RB"); }
+function getReceivers(){ return G.players.filter(p=>p.role==="WR"); }
+function getBallCarrier(){ return G.players.find(p=>p.hasBall); }
+
+// ---------- Input ----------
+window.addEventListener("keydown", e=>{
+  const k = e.key.toLowerCase();
+  G.keys[k] = true;
+  if(["arrowup","arrowdown","arrowleft","arrowright"," "].includes(k)) e.preventDefault();
+  if(k==="p" && G.running && !G.gameOver){ togglePause(); }
+  if(G.phase==="playcall" && !G.gameOver){
+    if(k==="1"){ G.playType="pass"; showPlayCall(); }
+    if(k==="2"){ G.playType="pass"; G._altPass=true; showPlayCall(); }
+    if(k==="3"){ G.playType="run"; showPlayCall(); }
+    if(k==="enter" || k===" "){ hidePlayCall(); setupPlay(); showMsg(`${userOnOffense()?"Offense":"Defense"} — <span class="kbd">Enter</span> snapped!`, 900); }
+  }
+  if(G.phase==="presnap" && (k==="enter" || k===" ")){ snapBall(); }
+  if(G.phase==="live" && k===" "){ tryThrowOrTackle(); }
+  if(G.phase==="fg" && k===" "){ kickFG(); }
+  if(k==="r" && G.phase==="live" && userOnOffense()){ handoff(); }
+});
+window.addEventListener("keyup", e=>{ G.keys[e.key.toLowerCase()] = false; });
+// touch
+document.querySelectorAll(".touch-dpad button").forEach(b=>{
+  const k = b.dataset.k;
+  const map = { up:"arrowup", down:"arrowdown", left:"arrowleft", right:"arrowright" };
+  b.addEventListener("touchstart", e=>{ e.preventDefault(); G.keys[map[k]]=true; }, {passive:false});
+  b.addEventListener("touchend", e=>{ e.preventDefault(); G.keys[map[k]]=false; }, {passive:false});
+  b.addEventListener("mousedown", ()=> G.keys[map[k]]=true);
+  b.addEventListener("mouseup", ()=> G.keys[map[k]]=false);
+});
+$("touch-throw").addEventListener("click", ()=>{ if(G.phase==="live") tryThrowOrTackle(); else if(G.phase==="fg") kickFG(); });
+$("touch-snap").addEventListener("click", ()=>{ if(G.phase==="playcall"){ hidePlayCall(); setupPlay(); } else if(G.phase==="presnap") snapBall(); });
+
+function snapBall(){
+  if(G.phase!=="presnap") return;
+  G.phase = "live";
+  hideMsg();
+  showMsg(`<b>${G.playType==="run"?"RUN":"PASS"}</b> — ${userOnOffense() ? "Move QB, <b>Space</b> to throw!" : "Tackle the carrier! <b>Space</b> to dive!"}`, 1800);
+  if(!userOnOffense()){
+    // AI QB will act; user is LB
+  } else {
+    // if run play, auto-handoff after short drop
+    if(G.playType==="run"){ setTimeout(()=>{ if(G.phase==="live" && userOnOffense()) handoff(); }, 700); }
+  }
+}
+function handoff(){
+  const qb = getQB(), rb = getRB();
+  if(!qb || !rb || !qb.hasBall) return;
+  qb.hasBall = false; rb.hasBall = true;
+  if(userOnOffense()){ qb.ctrl=false; rb.ctrl=true; G.userControlled=rb; }
+  showMsg("Handoff to RB!", 800);
+}
+function tryThrowOrTackle(){
+  if(userOnOffense()){
+    const qb = getQB();
+    if(!qb || !qb.hasBall) return;
+    // can't throw after crossing LOS
+    if(qb.x > yardsToPx(G.ballOn)+4){ showMsg("⚠ Past the line — can't throw! Run it!", 1200); return; }
+    throwBall(qb);
+  } else {
+    // dive: burst toward ball carrier
+    const lb = G.userControlled;
+    if(lb){ lb._dive = 14; }
+  }
+}
+function throwBall(qb){
+  const recs = getReceivers();
+  // pick most open receiver (max distance to nearest defender, weighted by downfield)
+  let best=null, bestScore=-1e9;
+  recs.forEach(r=>{
+    let minD = 1e9;
+    G.players.filter(p=>p.team!==qb.team && (p.role==="CB"||p.role==="S"||p.role==="LB")).forEach(d=>{
+      const d2 = Math.hypot(d.x-r.x, d.y-r.y); if(d2<minD) minD=d2;
+    });
+    const score = minD + (r.x - qb.x)*0.25;
+    if(score>bestScore){ bestScore=score; best=r; }
+  });
+  if(!best) return;
+  qb.hasBall = false;
+  G.ball.inAir = true; G.ball.target = best;
+  G.ball.sx = qb.x; G.ball.sy = qb.y;
+  // lead the receiver
+  G.ball.tx = best.x + 30; G.ball.ty = best.y;
+  const dist = Math.hypot(G.ball.tx-G.ball.sx, G.ball.ty-G.ball.sy);
+  G.ball.dur = clamp(dist/9, 18, 55); G.ball.t = 0;
+  G.ball.x = qb.x; G.ball.y = qb.y;
+  G.phase = "ballInAir";
+  showMsg("🎯 Thrown!", 700);
+}
+function aiThrow(qb){
+  // AI QB throws after delay if user on defense
+  const recs = getReceivers();
+  if(!recs.length) return;
+  // AI picks a receiver; sometimes runs
+  if(Math.random()<0.22 && G.playType==="run"){ handoffAI(); return; }
+  // find open
+  let best=recs[0], bestScore=-1e9;
+  recs.forEach(r=>{
+    let minD=1e9;
+    G.players.filter(p=>p.team!==qb.team).forEach(d=>{ const d2=Math.hypot(d.x-r.x,d.y-r.y); if(d2<minD) minD=d2; });
+    const s = minD + (r.x-qb.x)*0.2;
+    if(s>bestScore){ bestScore=s; best=r; }
+  });
+  qb.hasBall=false;
+  G.ball.inAir=true; G.ball.target=best;
+  G.ball.sx=qb.x; G.ball.sy=qb.y; G.ball.tx=best.x+30; G.ball.ty=best.y;
+  const dist=Math.hypot(G.ball.tx-G.ball.sx, G.ball.ty-G.ball.sy);
+  G.ball.dur=clamp(dist/9,18,55); G.ball.t=0; G.ball.x=qb.x; G.ball.y=qb.y;
+  G.phase="ballInAir";
+}
+function handoffAI(){
+  const qb=getQB(), rb=getRB();
+  if(qb&&rb&&qb.hasBall){ qb.hasBall=false; rb.hasBall=true; }
+}
+
+// ---------- Play resolution ----------
+function resolveCatch(target){
+  const mods = difficultyMods();
+  // nearest defender distance
+  let minD=1e9, nearest=null;
+  G.players.filter(p=>p.team!==target.team && p.role!=="OL").forEach(d=>{
+    const dd=Math.hypot(d.x-target.x, d.y-target.y); if(dd<minD){ minD=dd; nearest=d; }
+  });
+  const offR = offenseTeam().ovr, defR = defenseTeam().ovr;
+  let catchChance = 0.55 + (minD-30)/220 + (offR-defR)/220;
+  if(target.team!==G.possession) catchChance=0; // shouldn't happen
+  // AI offense catch vs user defense slightly harder on rookie
+  if(!userOnOffense()) catchChance *= mods.aiCatch;
+  else catchChance *= 1.05;
+  catchChance = clamp(catchChance, 0.08, 0.96);
+  const roll = Math.random();
+  if(roll < catchChance){
+    // caught!
+    target.hasBall = true;
+    G.ball.inAir=false;
+    if(userOnOffense()){ G.userControlled=target; target.ctrl=true; const qb=getQB(); if(qb) qb.ctrl=false; }
+    G.phase="live";
+    showMsg(`✅ Caught by ${target.name}! Run!`, 900);
+    // check TD immediately?
+    checkScore(target);
+  } else if(nearest && minD<70 && Math.random()<0.35){
+    // interception!
+    nearest.hasBall=true; G.ball.inAir=false;
+    endPlay("INT", nearest);
+  } else {
+    G.ball.inAir=false;
+    endPlay("Incomplete", null);
+  }
+}
+function checkScore(carrier){
+  if(!carrier) return;
+  const y = carrier.x / PX_PER_YARD;
+  if(y >= 110){ // TD (110 = goal line; end zone 110-120)
+    endPlay("TD", carrier);
+  } else if(y <= 10 && carrier.team===G.possession && carrier.x < yardsToPx(G.ballOn)-40){
+    // safety: tackled in own end zone — handled in tackle check
+  }
+}
+function endPlay(kind, carrier){
+  G.phase="dead";
+  const off = offenseTeam();
+  const startBall = G.ballOn;
+  let gain = 0;
+  if(carrier && carrier.hasBall){
+    gain = Math.round(carrier.x/PX_PER_YARD - startBall);
+  } else if(kind==="Incomplete"){ gain = 0; }
+  else if(kind==="INT"){ gain = 0; }
+  // stats
+  const isHomeOff = G.possession==="home";
+  const statKey = isHomeOff ? "home" : "away";
+  if(kind==="TD"){
+    if(isHomeOff) G.scoreHome+=6; else G.scoreAway+=6;
+    G.stats[statKey].rushTD += (carrier && carrier.role==="RB")?1:0;
+    G.stats[statKey].passTD += (carrier && carrier.role==="WR")?1:0;
+    // XP auto 92%
+    if(Math.random()<0.92){ if(isHomeOff) G.scoreHome+=1; else G.scoreAway+=1; }
+    showMsg(`🏆 TOUCHDOWN ${off.abbr}! <small>+ XP</small>`, 3000);
+    addPlayerStats(carrier, gain, kind);
+    setTimeout(()=>{ afterScore(); }, 1400);
+    updateHUD(); return;
+  }
+  if(kind==="Safety"){
+    if(isHomeOff) G.scoreAway+=2; else G.scoreHome+=2;
+    showMsg(`⚠ SAFETY! Defense scores 2.`, 2800);
+    setTimeout(()=>{ afterScore(true); }, 1400);
+    updateHUD(); return;
+  }
+  if(kind==="INT"){
+    G.stats[statKey].turnovers++;
+    showMsg(`❌ INTERCEPTED! Turnover!`, 2600);
+    addPlayerStats(carrier, 0, kind);
+    setTimeout(()=>{ changePossession(); }, 1400);
+    updateHUD(); return;
+  }
+  if(kind==="Incomplete"){
+    showMsg(`💨 Incomplete pass.`, 1400);
+    setTimeout(()=>{ advanceDown(gain); }, 1100);
+    updateHUD(); return;
+  }
+  // tackle / sack / run
+  if(carrier){
+    if(carrier.role==="QB"){ G.stats[statKey].rushYds += gain; }
+    else if(carrier.role==="RB"){ G.stats[statKey].rushYds += gain; }
+    else if(carrier.role==="WR"){ G.stats[statKey].passYds += gain; }
+    addPlayerStats(carrier, gain, kind);
+    if(gain>0) showMsg(`Gain of ${gain} yards.`, 1300);
+    else if(gain<0) showMsg(`Loss of ${Math.abs(gain)} yards!`, 1300);
+    else showMsg(`No gain.`, 1100);
+  }
+  setTimeout(()=>{ advanceDown(gain); }, 1100);
+  updateHUD();
+}
+function addPlayerStats(carrier, gain, kind){
+  if(!S || !carrier) return;
+  // map carrier to user roster if user team on offense
+  if(carrier.team!==G.possession) return;
+  const userOff = userOnOffense();
+  if(!userOff) return; // only track user offense stats in detail
+  let p = null;
+  if(carrier.role==="QB") p = bestPlayer("QB");
+  else if(carrier.role==="RB") p = bestPlayer("RB");
+  else if(carrier.role==="WR") p = bestPlayer("WR");
+  if(!p) return;
+  if(kind==="TD"){
+    if(carrier.role==="QB"){ p.stats.rushTD++; }
+    else if(carrier.role==="RB"){ p.stats.rushTD++; p.stats.rushYds+=Math.max(0,gain); }
+    else if(carrier.role==="WR"){ p.stats.recTD++; p.stats.recYds+=Math.max(0,gain); }
+  } else if(kind==="Incomplete" || kind==="INT"){
+    // QB pass yards already? track attempts via passYds only on catch; INT counts as turnover
+  } else {
+    if(carrier.role==="QB") p.stats.rushYds+=gain;
+    else if(carrier.role==="RB") p.stats.rushYds+=gain;
+    else if(carrier.role==="WR"){ p.stats.recYds+=gain; const qb=bestPlayer("QB"); if(qb) qb.stats.passYds+=gain; }
+  }
+  if(kind==="TD" && carrier.role==="WR"){ const qb=bestPlayer("QB"); if(qb){ qb.stats.passTD++; qb.stats.passYds+=Math.max(0,gain); } }
+  // Heisman points (college QB)
+  if(S.phase==="college" && carrier.role==="WR" && kind==="TD"){ S.heisman[S.teamAbbr]=(S.heisman[S.teamAbbr]||0)+6; }
+  if(S.phase==="college" && carrier.role==="QB" && kind==="TD"){ S.heisman[S.teamAbbr]=(S.heisman[S.teamAbbr]||0)+6; }
+}
+function advanceDown(gain){
+  if(G.gameOver) return;
+  // clock runoff
+  tickClock(4);
+  const newBall = clamp(G.ballOn + gain, 1, 119);
+  G.ballOn = newBall;
+  if(G.ballOn>=110){ // should have been TD, but safety net
+    endPlay("TD", getBallCarrier()); return;
+  }
+  if(gain >= G.toGo){
+    G.down = 1; G.toGo = 10;
+    showMsg(`🎉 First down!`, 1200);
+  } else {
+    G.down++; G.toGo -= gain;
+    if(G.down>4){
+      showMsg(`🔄 Turnover on downs!`, 1800);
+      setTimeout(()=>changePossession(), 1200);
+      updateHUD(); return;
+    }
+  }
+  // check FG / punt opportunity on 4th down
+  if(G.down===4 && G.ballOn>=75){ // within ~35 of goal (ballOn 75 = 25 yd line)
+    showFGOrPunt();
+    updateHUD(); return;
+  }
+  if(G.down===4 && G.ballOn<75 && G.ballOn>30){
+    // offer punt/FG choice via playcall overlay variant
+    showFGOrPunt();
+    updateHUD(); return;
+  }
+  G.phase="playcall";
+  updateHUD();
+  showPlayCall();
+}
+function changePossession(){
+  G.possession = G.possession==="home" ? "away" : "home";
+  G.down=1; G.toGo=10;
+  // kickoff spot: opponent gets ball at 25 (from their perspective)
+  // If possession flips, ballOn is from new offense perspective: set to 25
+  G.ballOn = 25;
+  G.phase="playcall";
+  updateHUD();
+  showMsg(`🔁 ${offenseTeam().abbr} ball.`, 1400);
+  showPlayCall();
+}
+function afterScore(isSafety=false){
+  if(isSafety){ changePossession(); return; }
+  // kickoff to other team
+  changePossession();
+}
+function tickClock(sec){
+  G.clock -= sec;
+  while(G.clock<=0){
+    if(G.quarter>=4){ endGame(); return; }
+    G.quarter++; G.clock += settings.quarter;
+    if(G.quarter===3 && !G.halftimeShown){
+      G.halftimeShown = true;
+      showHalftime();
+      return;
+    }
+  }
+  updateHUD();
+}
+function showHalftime(){
+  G.paused = true;
+  $("halftime-line").textContent = `${G.home.abbr} ${G.scoreHome} — ${G.scoreAway} ${G.away.abbr}`;
+  $("halftime-stats").innerHTML = `<p>Home pass ${G.stats.home.passYds}yd • Away pass ${G.stats.away.passYds}yd</p>`;
+  $("overlay-halftime").classList.add("show");
+}
+function endGame(){
+  if(G.gameOver) return;
+  G.gameOver = true; G.phase="dead";
+  const userScore = G.scoreHome, oppScore = G.scoreAway;
+  const win = userScore>oppScore, tie = userScore===oppScore;
+  $("gameover-title").textContent = win ? "🎉 YOU WIN!" : (tie? "🤝 TIE GAME" : "😞 YOU LOSE");
+  $("gameover-score").textContent = `${G.home.city} ${G.home.name} ${userScore} — ${oppScore} ${G.away.city} ${G.away.name}`;
+  const qb = bestPlayer("QB");
+  $("gameover-stats").innerHTML = `
+    <p>Team pass yards: <b>${G.stats.home.passYds}</b> • Rush TDs: <b>${G.stats.home.rushTD}</b> • Turnovers: <b>${G.stats.home.turnovers}</b></p>
+    ${qb?`<p>QB ${qb.name}: ${fmt(qb.stats.passYds)} pass yds, ${qb.stats.passTD} TD • ${fmt(qb.stats.rushYds)} rush yds</p>`:""}
+    <p>${win? "Great win! Record updated. Keep rolling!" : "Tough loss. Hit the lab and come back next week."}</p>`;
+  $("overlay-gameover").classList.add("show");
+  updateHUD();
+}
+
+// ---------- FG / Punt ----------
+function showFGOrPunt(){
+  const dist = (100 - G.ballOn) + 17; // approx FG distance
+  $("playcall-title").textContent = "4th Down";
+  $("playcall-sub").textContent = `Ball on ${G.ballOn<=50? "Own "+G.ballOn : "Opp "+(100-G.ballOn)} • FG from ~${dist} yds. Punt or kick?`;
+  const btns = $("playcall-btns"); btns.innerHTML="";
+  const fgBtn = document.createElement("button"); fgBtn.className="rb-btn gold small"; fgBtn.textContent = `🥅 Field Goal (${dist} yd)`;
+  fgBtn.style.background="linear-gradient(180deg,#f1c40f,#d4a017)"; fgBtn.style.color="#111";
+  fgBtn.onclick = ()=> startFG(dist);
+  const puntBtn = document.createElement("button"); puntBtn.className="rb-btn dark small"; puntBtn.textContent = "🦵 Punt";
+  puntBtn.onclick = ()=> doPunt();
+  btns.append(fgBtn, puntBtn);
+  $("fg-area").style.display="none";
+  $("playcall-actions").innerHTML="";
+  $("overlay-playcall").classList.add("show");
+  G.phase="playcall";
+}
+function startFG(dist){
+  $("fg-area").style.display="block";
+  $("playcall-btns").innerHTML="";
+  const zoneW = 22; // % of bar
+  const center = 50;
+  const zone = $("fg-meter-zone");
+  zone.style.left = (center-zoneW/2)+"%"; zone.style.width = zoneW+"%";
+  G.fg = { active:true, pos:0, dir:1, speed: 1.4 + (dist>40?0.5:0) + (settings.difficulty==="allpro"?0.4:0) };
+  G.phase="fg";
+  $("playcall-title").textContent = `🥅 ${dist}-yard FG`;
+  $("playcall-sub").textContent = "Press SPACE when the needle is in the green!";
+  // animate needle via interval in loop
+}
+function kickFG(){
+  if(G.phase!=="fg") return;
+  const pos = G.fg.pos; // 0..100
+  const inGreen = pos>=39 && pos<=61;
+  const dist = (100-G.ballOn)+17;
+  const makeChance = inGreen ? (dist<=30?0.95: dist<=40?0.85: dist<=50?0.7:0.5) : 0.15;
+  const made = Math.random() < makeChance;
+  $("overlay-playcall").classList.remove("show");
+  G.fg.active=false;
+  if(made){
+    if(G.possession==="home") G.scoreHome+=3; else G.scoreAway+=3;
+    showMsg(`🥅 It's GOOD! +3`, 2200);
+  } else {
+    showMsg(`😖 No good...`, 2200);
+  }
+  updateHUD();
+  setTimeout(()=>{ if(!G.gameOver) changePossession(); }, 1400);
+}
+function doPunt(){
+  $("overlay-playcall").classList.remove("show");
+  showMsg(`🦵 Punted away.`, 1500);
+  setTimeout(()=>changePossession(), 1200);
+}
+
+// ---------- Play call UI ----------
+function showPlayCall(){
+  if(G.gameOver) return;
+  const off = offenseTeam();
+  const ord = ["","1st","2nd","3rd","4th"][G.down];
+  $("playcall-title").textContent = `${off.abbr} — ${ord} & ${G.toGo}`;
+  $("playcall-sub").textContent = userOnOffense()
+    ? "Pick a play, then press ENTER to snap. (1=Deep Pass, 2=Short Pass, 3=Run)"
+    : "Pick a defense, then press ENTER to snap. (1=Man, 2=Zone, 3=Blitz)";
+  const btns = $("playcall-btns"); btns.innerHTML="";
+  const plays = userOnOffense()
+    ? [ {k:"1", label:"🎯 Deep Pass", type:"pass"}, {k:"2", label:"⚡ Short Pass", type:"pass"}, {k:"3", label:"🏃 Run", type:"run"} ]
+    : [ {k:"1", label:"🛡 Man Cover", type:"pass"}, {k:"2", label:"🧱 Zone", type:"pass"}, {k:"3", label:"🔥 Blitz", type:"run"} ];
+  plays.forEach(p=>{
+    const b = document.createElement("button");
+    b.textContent = `[${p.k}] ${p.label}`;
+    b.style.background = (G.playType===p.type && ((p.k==="1"&&!G._altPass)||(p.k==="2"&&G._altPass)||(p.k==="3"&&p.type==="run"))) ? "#f1c40f" : "#1c2f4d";
+    b.style.color = (G.playType===p.type && ((p.k==="1"&&!G._altPass)||(p.k==="2"&&G._altPass)||(p.k==="3"&&p.type==="run"))) ? "#111" : "#fff";
+    b.onclick = ()=>{ G.playType=p.type; if(p.k==="2") G._altPass=true; else if(p.k==="1") G._altPass=false; showPlayCall(); };
+    btns.appendChild(b);
+  });
+  const snapBtn = document.createElement("button"); snapBtn.className="rb-btn small"; snapBtn.textContent="▶ Snap (Enter)";
+  snapBtn.onclick = ()=>{ hidePlayCall(); setupPlay(); };
+  $("playcall-actions").innerHTML=""; $("playcall-actions").appendChild(snapBtn);
+  $("fg-area").style.display="none";
+  $("overlay-playcall").classList.add("show");
+  G.phase="playcall";
+}
+function hidePlayCall(){ $("overlay-playcall").classList.remove("show"); }
+
+// ---------- Pause ----------
+function togglePause(){
+  G.paused = !G.paused;
+  $("pause-score-line").textContent = `${G.home.abbr} ${G.scoreHome} — ${G.scoreAway} ${G.away.abbr} • Q${G.quarter} ${Math.floor(G.clock/60)}:${String(Math.floor(G.clock%60)).padStart(2,"0")}`;
+  $("overlay-pause").classList.toggle("show", G.paused);
+}
+$("btn-pause").onclick = ()=>{ if(G.running) togglePause(); };
+$("btn-resume").onclick = ()=> togglePause();
+$("btn-restart").onclick = ()=>{ $("overlay-pause").classList.remove("show"); G.paused=false; startGame(S.teamAbbr, oppTeam()? oppTeam().abbr : G.away.abbr); };
+$("btn-quit-to-hub").onclick = ()=>{ G.paused=false; G.running=false; if(G.raf) cancelAnimationFrame(G.raf); $("overlay-pause").classList.remove("show"); renderHub(); showScreen("screen-hub"); };
+$("btn-quit-game").onclick = ()=>{ G.running=false; if(G.raf) cancelAnimationFrame(G.raf); renderHub(); showScreen("screen-hub"); };
+$("btn-halftime-continue").onclick = ()=>{ $("overlay-halftime").classList.remove("show"); G.paused=false; };
+$("btn-gameover-continue").onclick = ()=>{
+  $("overlay-gameover").classList.remove("show");
+  G.running=false; if(G.raf) cancelAnimationFrame(G.raf);
+  // record result
+  recordUserResult(G.scoreHome, G.scoreAway);
+  // check playoffs / champion
+  if(S.week > S.schedule.length){
+    if(!S.playoffs){ buildPlayoffs(); }
+    // if user made playoffs, they need to play playoff games via hub; if not, sim to champion
+    if(!S.playoffs.userAlive){
+      // sim remaining rounds to champion
+      let guard=0;
+      while(S.playoffs.stage!=="Championship" && guard++<5) simPlayoffRound();
+      // final
+      const t = S.playoffs.teams;
+      if(t.length>=2){ const {hs,as}=simGame(t[0],t[1]); S.champion = hs>as? t[0]:t[1]; }
+      showChampion();
+      return;
+    } else {
+      // user alive: go to hub to play playoff game
+      renderHub(); showScreen("screen-hub");
+      toast("Playoffs! Win to advance!");
+      return;
+    }
+  }
+  renderHub(); showScreen("screen-hub");
+};
+function showChampion(){
+  const champ = teamByAbbr(S.champion || S.teamAbbr);
+  const isUser = S.champion===S.teamAbbr;
+  $("champion-title").textContent = isUser ? "🏆 CHAMPIONS!" : `${champ.city} ${champ.name} WIN IT ALL`;
+  $("champion-sub").textContent = isUser
+    ? `You won the ${S.phase==="college"?"National Championship":"Super Bowl"}! ${S.phase==="college"?"Now get drafted and go pro — or run it back!":"Dynasty status achieved."}`
+    : `${champ.city} ${champ.name} are champions. ${S.playoffs && S.playoffs.userAlive ? "You fell short — next season!" : "Your team missed the playoff. Reload and retry!"}`;
+  const st = S.standings.find(s=>s.abbr===S.teamAbbr);
+  $("champion-stats").innerHTML = `<p>Your record: <b>${st?st.w:0}-${st?st.l:0}</b> • Team OVR <b>${teamOvr()}</b></p>`;
+  showScreen("screen-champion");
+  saveGame();
+}
+$("btn-champion-next").onclick = ()=>{
+  // advance season: mashup college -> pro
+  if(S.mode==="mashup" && S.phase==="college"){
+    // draft: top college players join pro roster
+    const drafted = S.draftClass.slice(0,5);
+    S.phase = "pro";
+    // switch team to a pro team? Keep same city if exists else pick by OVR
+    const proMatch = PRO_TEAMS.find(t=>t.city===myTeam().city) || PRO_TEAMS[0];
+    // carry over best college players
+    const carry = [...S.roster].sort((a,b)=>b.rating-a.rating).slice(0,6).map(p=>({...p, age:p.age+1, stats:{passYds:0,passTD:0,rushYds:0,rushTD:0,recYds:0,recTD:0,tackles:0,sacks:0,ints:0,games:0}}));
+    S.teamAbbr = proMatch.abbr;
+    S.roster = [...genRoster(proMatch,"pro"), ...carry].slice(0,22);
+    S.week=1; S.standings = PRO_TEAMS.map(t=>({abbr:t.abbr,w:0,l:0,pf:0,pa:0}));
+    const opps = shuffle(PRO_TEAMS.filter(t=>t.abbr!==S.teamAbbr));
+    S.schedule = opps.slice(0,17).map((o,i)=>({week:i+1, opp:o.abbr, played:false, result:null, scoreFor:null, scoreAgainst:null}));
+    S.playoffs=null; S.champion=null; S.heisman={};
+    S.draftClass = genDraftClass();
+    saveGame();
+    renderHub(); showScreen("screen-hub");
+    toast(`🎓➡️🏈 Welcome to the PROS! ${drafted.length} draftees joined your roster.`);
+    return;
+  }
+  // new season same mode
+  const mode = S.phase;
+  const teamAbbr = S.teamAbbr;
+  const oldRoster = S.roster;
+  newCareer(mode==="college"?"college":"pro", teamAbbr);
+  // keep roster with aging + progression
+  S.roster = oldRoster.map(p=>({...p, age:p.age+1, rating: clamp(p.rating+randi(-2,3),55,99), stats:{passYds:0,passTD:0,rushYds:0,rushTD:0,recYds:0,recTD:0,tackles:0,sacks:0,ints:0,games:0}}));
+  saveGame();
+  renderHub(); showScreen("screen-hub");
+};
+$("btn-champion-menu").onclick = ()=>{ refreshTitle(); showScreen("screen-title"); };
+
+// ---------- Main loop ----------
+let lastT = 0;
+function loop(t){
+  if(!G.running) return;
+  G.raf = requestAnimationFrame(loop);
+  const now = performance.now();
+  const dt = Math.min(32, now - (lastT||now)); lastT = now;
+  if(!G.paused && !G.gameOver) update(dt/16.666);
+  draw();
+}
+function update(dt){
+  const mods = difficultyMods();
+  // clock ticks during live play
+  if(G.phase==="live" || G.phase==="ballInAir" || G.phase==="presnap"){
+    G.playClock += dt/60;
+    // tick clock slowly: 1 game-sec per real-sec during play
+    G._clockAcc = (G._clockAcc||0) + dt/60;
+    if(G._clockAcc>=1){ G._clockAcc-=1; tickClock(1); if(G.gameOver) return; }
+  }
+  // FG needle
+  if(G.phase==="fg" && G.fg.active){
+    G.fg.pos += G.fg.dir * G.fg.speed * dt;
+    if(G.fg.pos>=100){ G.fg.pos=100; G.fg.dir=-1; }
+    if(G.fg.pos<=0){ G.fg.pos=0; G.fg.dir=1; }
+    $("fg-meter-needle").style.left = `calc(${G.fg.pos}% - 3px)`;
+  }
+  if(G.phase!=="live" && G.phase!=="ballInAir" && G.phase!=="presnap") { draw(); return; }
+
+  // --- player movement ---
+  const qb = getQB();
+  // user control
+  const uc = G.userControlled;
+  if(uc && uc.ctrl){
+    let mx=0, my=0;
+    if(G.keys["arrowleft"]||G.keys["a"]) mx-=1;
+    if(G.keys["arrowright"]||G.keys["d"]) mx+=1;
+    if(G.keys["arrowup"]||G.keys["w"]) my-=1;
+    if(G.keys["arrowdown"]||G.keys["s"]) my+=1;
+    const spd = uc.speed * (userOnOffense()? mods.userSpeed : 1) * (uc._dive>0? 1.9:1);
+    uc.x += mx*spd*dt; uc.y += my*spd*dt;
+    if(uc._dive>0) uc._dive-=dt;
+    // keep in field bounds
+    uc.x = clamp(uc.x, 10*PX_PER_YARD, 120*PX_PER_YARD);
+    uc.y = clamp(uc.y, 120, H-60);
+    if(uc.hasBall){ G.ball.x=uc.x+8; G.ball.y=uc.y; }
+  }
+  // AI QB (when user on defense)
+  if(!userOnOffense() && qb && qb.hasBall && G.phase==="live"){
+    // drop back then throw/run
+    G.aiThink += dt;
+    if(G.aiThink<40){ qb.x -= 0.6*dt; qb.y += Math.sin(G.aiThink*0.1)*0.4*dt; }
+    else if(G.aiThink<90){ /* hold */ }
+    else if(G.aiThink<130){ qb.x += 1.2*dt; } // scramble
+    else { if(Math.random()<0.7) aiThrow(qb); else handoffAI(); G.aiThink=0; }
+    G.ball.x=qb.x+8; G.ball.y=qb.y;
+  }
+  // AI QB scramble when user is QB? No — user controls.
+  // Receivers run routes
+  G.players.forEach(p=>{
+    if(p.role==="WR" && !p.hasBall && G.phase==="live"){
+      if(p.wpi < p.wp.length){
+        const wp = p.wp[p.wpi];
+        const dx = wp.x-p.x, dy = wp.y-p.y, d = Math.hypot(dx,dy);
+        if(d<8) p.wpi++;
+        else { p.x += dx/d*p.speed*dt; p.y += dy/d*p.speed*dt; }
+      }
+    }
+    if(p.role==="RB" && p.hasBall && G.phase==="live" && !p.ctrl){
+      // AI RB runs upfield (when AI offense)
+      p.x += 2.2*dt; p.y += Math.sin(p.x*0.02)*0.5*dt;
+      G.ball.x=p.x+8; G.ball.y=p.y;
+    }
+    if(p.role==="OL" && G.phase==="live"){
+      // block nearest rusher briefly
+      if(p.blockT>0){ p.blockT-=dt/60; }
+      else {
+        // drift forward
+        p.x += 0.5*dt;
+      }
+    }
+    if(p.role==="DL" && G.phase==="live"){
+      const target = p.target && p.target.hasBall ? p.target : (getBallCarrier()||qb);
+      if(target){
+        const dx=target.x-p.x, dy=target.y-p.y, d=Math.hypot(dx,dy)||1;
+        const spd = p.speed*mods.aiSpeed*(G.playType==="run"?1.05:0.9);
+        // if OL blocking, slow down
+        let blocked=false;
+        G.players.filter(o=>o.role==="OL").forEach(o=>{ if(Math.hypot(o.x-p.x,o.y-p.y)<22) blocked=true; });
+        if(!blocked){ p.x+=dx/d*spd*dt; p.y+=dy/d*spd*dt; }
+      }
+    }
+    if(p.role==="CB" && G.phase==="live" && !p.hasBall){
+      const recs = getReceivers();
+      const myRec = recs[p.coverIdx] || recs[0];
+      if(myRec){
+        // if ball in air to my rec, break on ball
+        if(G.ball.inAir && G.ball.target===myRec){ p.x += (G.ball.tx-p.x)*0.06*dt; p.y += (G.ball.ty-p.y)*0.06*dt; }
+        else {
+          const dx=myRec.x-p.x, dy=myRec.y-p.y, d=Math.hypot(dx,dy)||1;
+          const spd=p.speed*mods.aiSpeed*0.92;
+          // stay between rec and end zone
+          p.x+=dx/d*spd*dt*0.7; p.y+=dy/d*spd*dt;
+          p.x = Math.max(p.x, myRec.x+6);
+        }
+      }
+    }
+    if((p.role==="S") && G.phase==="live" && !p.hasBall){
+      const carrier = getBallCarrier();
+      if(carrier){
+        const dx=carrier.x-p.x, dy=carrier.y-p.y, d=Math.hypot(dx,dy)||1;
+        const spd=p.speed*mods.aiSpeed*0.85;
+        p.x+=dx/d*spd*dt; p.y+=dy/d*spd*dt;
+      }
+    }
+    if(p.role==="LB" && !p.ctrl && G.phase==="live"){
+      const carrier = getBallCarrier();
+      if(carrier){
+        const dx=carrier.x-p.x, dy=carrier.y-p.y, d=Math.hypot(dx,dy)||1;
+        p.x+=dx/d*2.4*mods.aiSpeed*dt; p.y+=dy/d*2.4*mods.aiSpeed*dt;
+      }
+    }
+  });
+
+  // ball in air
+  if(G.ball.inAir){
+    G.ball.t++;
+    const k = G.ball.t / G.ball.dur;
+    G.ball.x = G.ball.sx + (G.ball.tx-G.ball.sx)*k;
+    G.ball.y = G.ball.sy + (G.ball.ty-G.ball.sy)*k;
+    // update target pos slightly (track receiver)
+    if(G.ball.target){ G.ball.tx = G.ball.target.x+24; G.ball.ty = G.ball.target.y; }
+    if(k>=1){ resolveCatch(G.ball.target); }
+  }
+
+  // tackle checks
+  if(G.phase==="live"){
+    const carrier = getBallCarrier();
+    if(carrier){
+      // TD check
+      if(carrier.x/PX_PER_YARD >= 110){ endPlay("TD", carrier); return; }
+      // safety: carrier tackled in own end zone (x < 10 yards)
+      // find nearest defender
+      let minD=1e9, tackler=null;
+      G.players.filter(p=>p.team!==carrier.team).forEach(d=>{
+        const dd=Math.hypot(d.x-carrier.x, d.y-carrier.y);
+        if(dd<minD){ minD=dd; tackler=d; }
+      });
+      const tackleDist = carrier.role==="QB"? 16: 18;
+      if(minD < tackleDist){
+        // sack / tackle
+        if(carrier.x/PX_PER_YARD <= 10 && carrier.team===G.possession){
+          endPlay("Safety", carrier); return;
+        }
+        // fumble chance
+        if(Math.random()<0.03){
+          showMsg(`💥 FUMBLE!`, 1500);
+          // turnover: give to defense (simplify as INT-like)
+          endPlay("INT", tackler); return;
+        }
+        endPlay("Tackle", carrier); return;
+      }
+      // out of bounds (top/bottom)
+      if(carrier.y<110 || carrier.y>H-50){
+        endPlay("Tackle", carrier); return;
+      }
+    }
+  }
+  clampCamera();
+  updateHUD();
+}
+
+// ---------- Drawing ----------
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // sky / crowd
+  const sky = ctx.createLinearGradient(0,0,0,140);
+  sky.addColorStop(0,"#0a1428"); sky.addColorStop(1,"#1a2f4d");
+  ctx.fillStyle=sky; ctx.fillRect(0,0,W,140);
+  // crowd dots
+  ctx.fillStyle="rgba(255,255,255,.35)";
+  for(let i=0;i<120;i++){ const x=(i*47)%W, y=20+((i*29)%90); ctx.fillRect(x,y,3,3); }
+  ctx.fillStyle="rgba(241,196,15,.5)";
+  for(let i=0;i<40;i++){ const x=(i*71)%W, y=30+((i*37)%70); ctx.fillRect(x,y,3,3); }
+  // field
+  const fieldTop=140, fieldBot=H-40;
+  ctx.fillStyle="#2a7a3b"; ctx.fillRect(0,fieldTop,W,fieldBot-fieldTop);
+  for(let yd=0; yd<120; yd+=5){
+    if((yd/5)%2===0){ ctx.fillStyle="rgba(255,255,255,.06)"; ctx.fillRect(yd*PX_PER_YARD-G.cameraX, fieldTop, 5*PX_PER_YARD, fieldBot-fieldTop); }
+  }
+  // end zones
+  ctx.fillStyle = G.home.c1; ctx.fillRect(0*PX_PER_YARD-G.cameraX, fieldTop, 10*PX_PER_YARD, fieldBot-fieldTop);
+  ctx.fillStyle = G.away.c1; ctx.fillRect(110*PX_PER_YARD-G.cameraX, fieldTop, 10*PX_PER_YARD, fieldBot-fieldTop);
+  ctx.fillStyle="rgba(255,255,255,.9)"; ctx.font="900 14px Arial"; ctx.textAlign="center";
+  ctx.fillText(G.home.abbr, 5*PX_PER_YARD-G.cameraX, (fieldTop+fieldBot)/2);
+  ctx.fillText(G.away.abbr, 115*PX_PER_YARD-G.cameraX, (fieldTop+fieldBot)/2);
+  // yard lines + numbers
+  ctx.strokeStyle="rgba(255,255,255,.85)"; ctx.lineWidth=2;
+  for(let yd=10; yd<=110; yd+=5){
+    const x=yd*PX_PER_YARD-G.cameraX;
+    ctx.beginPath(); ctx.moveTo(x,fieldTop); ctx.lineTo(x,fieldBot); ctx.stroke();
+    if(yd%10===0 && yd>10 && yd<110){
+      const label = yd<=60 ? (yd-10) : (110-yd);
+      ctx.fillStyle="rgba(255,255,255,.9)"; ctx.font="900 16px Arial";
+      ctx.fillText(label, x, fieldTop+24);
+      ctx.fillText(label, x, fieldBot-10);
+    }
+  }
+  // LOS + first down line
+  const losX = yardsToPx(G.ballOn)-G.cameraX;
+  ctx.strokeStyle="#f1c40f"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(losX,fieldTop); ctx.lineTo(losX,fieldBot); ctx.stroke();
+  const fdYards = G.ballOn + G.toGo;
+  if(fdYards<=110){ const fdx = yardsToPx(fdYards)-G.cameraX; ctx.strokeStyle="#7ec8ff"; ctx.setLineDash([8,6]); ctx.beginPath(); ctx.moveTo(fdx,fieldTop); ctx.lineTo(fdx,fieldBot); ctx.stroke(); ctx.setLineDash([]); }
+  // players
+  G.players.forEach(p=>{
+    const x=p.x-G.cameraX, y=p.y;
+    if(x<-40||x>W+40) return;
+    // shadow
+    ctx.fillStyle="rgba(0,0,0,.3)"; ctx.beginPath(); ctx.ellipse(x,y+16,12,5,0,0,Math.PI*2); ctx.fill();
+    // body
+    ctx.fillStyle=p.color; ctx.fillRect(x-9,y-10,18,20);
+    ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.strokeRect(x-9,y-10,18,20);
+    // helmet
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(x,y-14,7,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle="#111"; ctx.font="900 8px Arial"; ctx.textAlign="center"; ctx.fillText(p.num, x, y-11);
+    // legs
+    ctx.fillStyle="#111"; ctx.fillRect(x-7,y+10,5,8); ctx.fillRect(x+2,y+10,5,8);
+    if(p.ctrl){ ctx.strokeStyle="#f1c40f"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(x,y,20,0,Math.PI*2); ctx.stroke(); }
+    if(p.hasBall){ ctx.fillStyle="#8B4513"; ctx.beginPath(); ctx.ellipse(x+12,y+2,7,4,0.5,0,Math.PI*2); ctx.fill(); }
+  });
+  // ball in air
+  if(G.ball.inAir){
+    const x=G.ball.x-G.cameraX, y=G.ball.y - Math.sin((G.ball.t/G.ball.dur)*Math.PI)*40;
+    ctx.fillStyle="#8B4513"; ctx.beginPath(); ctx.ellipse(x,y,9,5,0.5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.stroke();
+    // target marker
+    if(G.ball.target){ const tx=G.ball.target.x-G.cameraX, ty=G.ball.target.y-28; ctx.fillStyle="#f1c40f"; ctx.font="900 16px Arial"; ctx.fillText("▼", tx, ty); }
+  }
+  // bottom hint bar
+  ctx.fillStyle="rgba(0,0,0,.75)"; ctx.fillRect(0,H-40,W,40);
+  ctx.fillStyle="#fff"; ctx.font="700 12px Arial"; ctx.textAlign="left";
+  const hint = userOnOffense() ? "◀▲▼▶ Move QB  •  SPACE Throw  •  ENTER Snap  •  1/2/3 Play  •  P Pause" : "◀▲▼▶ Move LB  •  SPACE Dive Tackle  •  ENTER Snap  •  1/2/3 Defense  •  P Pause";
+  ctx.fillText(hint, 12, H-14);
+  ctx.textAlign="right"; ctx.fillText(`${offenseTeam().abbr} ball • ${G.down}${["","st","nd","rd","th"][G.down]} & ${G.toGo}`, W-12, H-14);
+  // presnap indicator
+  if(G.phase==="presnap"){
+    ctx.fillStyle="rgba(0,0,0,.6)"; ctx.fillRect(W/2-180, 150, 360, 44);
+    ctx.fillStyle="#f1c40f"; ctx.font="900 18px Arial"; ctx.textAlign="center";
+    ctx.fillText("Press ENTER to snap!", W/2, 178);
+  }
+}
+
+// ---------- Wire up UI ----------
+$("btn-play-college").onclick = ()=> openTeamSelect("college");
+$("btn-play-pro").onclick = ()=> openTeamSelect("pro");
+$("btn-play-mashup").onclick = ()=> openTeamSelect("mashup");
+$("btn-continue").onclick = ()=>{ S = loadGame(); if(S){ renderHub(); showScreen("screen-hub"); } };
+$("btn-howto").onclick = ()=> showScreen("screen-howto");
+$("btn-options").onclick = ()=> showScreen("screen-options");
+$("btn-howto-back").onclick = ()=>{ refreshTitle(); showScreen("screen-title"); };
+$("btn-options-back").onclick = ()=>{ refreshTitle(); showScreen("screen-title"); };
+$("btn-team-back").onclick = ()=>{ refreshTitle(); showScreen("screen-title"); };
+$("btn-random-team").onclick = ()=>{
+  const teams = (pendingMode==="pro")? PRO_TEAMS : COLLEGE_TEAMS;
+  selectedTeam = pick(teams).abbr;
+  document.querySelectorAll(".team-card").forEach(c=>c.classList.remove("selected"));
+  // find card by abbr text
+  document.querySelectorAll(".team-card").forEach(c=>{ if(c.textContent.includes(selectedTeam)) c.classList.add("selected"); });
+  $("btn-start-season").disabled=false;
+};
+$("btn-start-season").onclick = ()=>{
+  if(!selectedTeam) return;
+  newCareer(pendingMode, selectedTeam);
+  renderHub(); showScreen("screen-hub");
+  toast("Season started! Good luck, coach!");
+};
+$("btn-hub-menu").onclick = ()=>{ refreshTitle(); showScreen("screen-title"); };
+$("btn-hub-roster").onclick = ()=>{ renderRoster(); showScreen("screen-roster"); };
+$("btn-hub-standings").onclick = ()=>{ renderStandings(); showScreen("screen-standings"); };
+$("btn-hub-recruit").onclick = ()=>{ renderRecruit(); showScreen("screen-recruit"); };
+$("btn-hub-draft").onclick = ()=>{ renderDraft(); showScreen("screen-draft"); };
+$("btn-roster-back").onclick = ()=>{ renderHub(); showScreen("screen-hub"); };
+$("btn-standings-back").onclick = ()=>{ renderHub(); showScreen("screen-hub"); };
+$("btn-recruit-back").onclick = ()=>{ renderHub(); showScreen("screen-hub"); };
+$("btn-draft-back").onclick = ()=>{ renderHub(); showScreen("screen-hub"); };
+$("btn-recruit-done").onclick = ()=>{
+  // sign picked recruits
+  const cards = $("recruit-grid").querySelectorAll(".recruit-card.picked");
+  cards.forEach(c=>{
+    // find matching pool entry by name text
+    const name = c.querySelector("div").textContent.split(" ")[0]+" "+c.querySelector("div").textContent.split(" ")[1];
+    // simpler: parse rating
+    const rating = parseInt(c.querySelector("span").textContent);
+    const posText = c.textContent;
+    let pos="WR"; ["QB","RB","WR","TE","LB","CB","S"].forEach(p=>{ if(posText.includes(p)) pos=p; });
+    S.roster.push({ name: name||genName(), pos, num: randi(1,99), rating, age: randi(17,19), stats:{passYds:0,passTD:0,rushYds:0,rushTD:0,recYds:0,recTD:0,tackles:0,sacks:0,ints:0,games:0} });
+  });
+  saveGame(); renderHub(); showScreen("screen-hub");
+  toast(`Signed ${cards.length} recruit(s)!`);
+};
+$("btn-play-game").onclick = ()=>{
+  if(!S) return;
+  // playoffs?
+  if(S.week > S.schedule.length){
+    if(!S.playoffs){ buildPlayoffs(); renderHub(); return; }
+    if(!S.playoffs.userAlive){ toast("You missed the playoff. Sim to champion."); let g=0; while(S.playoffs.stage!=="Championship"&&g++<5) simPlayoffRound(); const t=S.playoffs.teams; if(t.length>=2){ const {hs,as}=simGame(t[0],t[1]); S.champion=hs>as?t[0]:t[1]; } showChampion(); return; }
+    const opp = playoffOpponent();
+    if(!opp){ toast("No opponent found."); return; }
+    // playoff game: winner advances
+    G.running = true; G.paused=false;
+    startGame(S.teamAbbr, opp);
+    // hook gameover to playoff logic: monkey-patch continue button once
+    const orig = $("btn-gameover-continue").onclick;
+    $("btn-gameover-continue").onclick = ()=>{
+      $("overlay-gameover").classList.remove("show");
+      G.running=false; if(G.raf) cancelAnimationFrame(G.raf);
+      const userWon = G.scoreHome > G.scoreAway;
+      if(userWon){
+        // advance
+        if(S.playoffs.stage==="Championship"){ S.champion=S.teamAbbr; showChampion(); return; }
+        simPlayoffRound(); // advances bracket (user already in)
+        // ensure user still in
+        if(!S.playoffs.teams.includes(S.teamAbbr)) S.playoffs.teams.push(S.teamAbbr);
+        renderHub(); showScreen("screen-hub");
+        toast("Playoff win! Advance!");
+      } else {
+        // eliminated: sim to champion
+        let g=0; while(S.playoffs.stage!=="Championship"&&g++<5) simPlayoffRound();
+        const t=S.playoffs.teams; if(t.length>=2){ const {hs,as}=simGame(t[0],t[1]); S.champion=hs>as?t[0]:t[1]; }
+        showChampion();
+      }
+      $("btn-gameover-continue").onclick = orig;
+    };
+    return;
+  }
+  const g = S.schedule[S.week-1];
+  if(!g) return;
+  if(g.played){ toast("Already played. Simming..."); recordUserResult(g.scoreFor||20, g.scoreAgainst||17); renderHub(); return; }
+  G.running = true; G.paused=false;
+  startGame(S.teamAbbr, g.opp);
+};
+// options
+$("opt-difficulty").value = settings.difficulty;
+$("opt-quarter").value = String(settings.quarter);
+$("opt-touch").checked = settings.touch;
+$("opt-difficulty").onchange = e=>{ settings.difficulty=e.target.value; saveSettings(); };
+$("opt-quarter").onchange = e=>{ settings.quarter=+e.target.value; saveSettings(); };
+$("opt-touch").onchange = e=>{ settings.touch=e.target.checked; saveSettings(); };
+$("btn-wipe-save").onclick = wipeSave;
+
+// init
+refreshTitle();
+showScreen("screen-title");
+</script>
+</body>
+</html>
