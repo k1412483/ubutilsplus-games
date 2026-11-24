@@ -19,8 +19,9 @@
 (() => {
   'use strict';
 
-  // Keep the established IDs 1–15 in this exact order: game-specific preparation
-  // below and existing ?N links depend on these mappings.
+  // IDs 1–11 stay fixed. IDs 12–15 order: Retro Bowl 2-in-1, Get Yoked,
+  // Rolling Sky, Super Mario Construct. Game-specific preparation below
+  // matches by path, so reordering IDs does not affect it.
   const KNOWN_GAMES = Object.freeze([
     { id: '1', path: '1on1soccer.html', name: '1-on-1 Soccer' },
     { id: '2', path: 'paperio2.html', name: 'Paper.io 2' },
@@ -33,10 +34,10 @@
     { id: '9', path: 'Sandboxels.html', name: 'Sandboxels', ref: '16b392e12a38a249ad2d2971aca52ef0a2bab3b3' },
     { id: '10', path: 'Google-Block-Breaker.html', name: 'Google Block Breaker' },
     { id: '11', path: 'PolyTrack.html', name: 'PolyTrack' },
-    { id: '12', path: 'Get-Yoked.html', name: 'Get Yoked' },
-    { id: '13', path: 'Rolling-Sky.html', name: 'Rolling Sky' },
-    { id: '14', path: 'Super-Mario-Construct.html', name: 'Super Mario Construct' },
-    { id: '15', path: 'retro-bowl-collection.html', name: 'Retro Bowl Collection' }
+    { id: '12', path: 'retro-bowl-collection.html', name: 'Retro Bowl 2-in-1' },
+    { id: '13', path: 'Get-Yoked.html', name: 'Get Yoked' },
+    { id: '14', path: 'Rolling-Sky.html', name: 'Rolling Sky' },
+    { id: '15', path: 'Super-Mario-Construct.html', name: 'Super Mario Construct' }
   ]);
   const REPOSITORY_TREE_API = 'https://api.github.com/repos/k1412483/ubutilsplus-games/git/trees/main?recursive=1';
   const REPOSITORY_RAW_BASE = 'https://raw.githubusercontent.com/k1412483/ubutilsplus-games';
